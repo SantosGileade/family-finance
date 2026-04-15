@@ -1,0 +1,11 @@
+{
+  "name": "FinançasFamília",
+  "short_name": "Finanças",
+  "description": "Controle financeiro familiar",
+  "theme_color": "#10b981",
+  "background_color": "#0d1117",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": ".",
+  "icons": []
+}
