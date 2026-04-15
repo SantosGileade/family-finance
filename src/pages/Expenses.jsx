@@ -75,11 +75,13 @@ export default function Expenses() {
     setShowModal(false)
     setSaving(false)
     await load()
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const handleDelete = async (id) => {
     await deleteExpense(id)
     setItems(items.filter(i => i.id !== id))
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const filtered = tab === 'all' ? items : items.filter(i => i.category === tab)

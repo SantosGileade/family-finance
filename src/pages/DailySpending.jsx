@@ -57,11 +57,13 @@ export default function DailySpending() {
     setShowModal(false)
     setSaving(false)
     await load()
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const handleDelete = async (id) => {
     await deleteDailySpending(id)
     setItems(items.filter(i => i.id !== id))
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const openModal = (dateStr) => {

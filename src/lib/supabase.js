@@ -59,7 +59,9 @@ export const deleteExpense = async (id) => {
 
 export const getDailySpending = async (userId, month, year) => {
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-  const endDate = `${year}-${String(month).padStart(2, '0')}-31`
+  // Calcula o último dia real do mês (evita datas inválidas como 31 de abril)
+  const lastDay = new Date(year, month, 0).getDate()
+  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
   const { data, error } = await supabase
     .from('daily_spending')

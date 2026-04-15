@@ -61,11 +61,13 @@ export default function Income() {
     setShowModal(false)
     setSaving(false)
     await load()
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const handleDelete = async (id) => {
     await deleteIncome(id)
     setItems(items.filter(i => i.id !== id))
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const total = items.reduce((s, i) => s + Number(i.amount), 0)

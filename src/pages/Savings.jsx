@@ -72,6 +72,7 @@ export default function Savings() {
     setShowModal(false)
     setSaving(false)
     await load()
+    window.dispatchEvent(new Event('finance-updated'))
 
     // Check for new milestone
     const newTotal = prevTotal + amount
