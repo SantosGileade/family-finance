@@ -33,6 +33,7 @@ export default function DailySpending() {
     description: '',
     amount: '',
     date: format(new Date(), 'yyyy-MM-dd'),
+    payment_method: 'cash', // 'cash' ou 'credit_card'
   })
 
   const load = async () => {
@@ -52,8 +53,9 @@ export default function DailySpending() {
       description: form.description,
       amount: parseCurrency(form.amount),
       date: form.date,
+      payment_method: form.payment_method,
     })
-    setForm({ description: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
+    setForm({ description: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), payment_method: 'cash' })
     setShowModal(false)
     setSaving(false)
     await load()
@@ -268,6 +270,13 @@ export default function DailySpending() {
           <div className="space-y-2">
             {items.slice(0, 15).map(item => (
               <div key={item.id} className="card-hover flex items-center gap-3 p-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${
+                  item.payment_method === 'credit_card'
+                    ? 'bg-blue-500/15 text-blue-400'
+                    : 'bg-dark-600 text-gray-400'
+                }`}>
+                  {item.payment_method === 'credit_card' ? '💳' : '💵'}
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm truncate">{item.description}</p>
                   <p className="text-gray-500 text-xs">{item.date}</p>
@@ -343,6 +352,39 @@ export default function DailySpending() {
                   onChange={e => setForm({ ...form, date: e.target.value })}
                   required
                 />
+              </div>
+
+              {/* Payment method toggle */}
+              <div>
+                <label className="label">Como pagou? · Payment method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'cash', emoji: '💵', label: 'Dinheiro/Débito', sub: 'Cash / Debit' },
+                    { value: 'credit_card', emoji: '💳', label: 'Cartão Crédito', sub: 'Credit Card' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm({ ...form, payment_method: opt.value })}
+                      className={`p-3 rounded-xl border text-center transition-all ${
+                        form.payment_method === opt.value
+                          ? opt.value === 'credit_card'
+                            ? 'border-blue-500/50 bg-blue-500/10 text-blue-400'
+                            : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                          : 'border-white/10 bg-dark-600 text-gray-400'
+                      }`}
+                    >
+                      <p className="text-xl mb-1">{opt.emoji}</p>
+                      <p className="text-xs font-semibold">{opt.label}</p>
+                      <p className="text-xs text-gray-500">{opt.sub}</p>
+                    </button>
+                  ))}
+                </div>
+                {form.payment_method === 'credit_card' && (
+                  <p className="text-blue-400 text-xs mt-2">
+                    💳 Vai descontar do limite do cartão. Não precisa adicionar em Despesas!
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3 pt-2">

@@ -29,17 +29,24 @@ export default function BalanceBar() {
     ])
     const totalInc = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
 
-    // Todas as despesas entram no saldo (fixas + variáveis + cartão + gastos diários)
     const allExp = exp.data || []
+    const allDaily = daily.data || []
+
+    // Total de todas as saídas (despesas fixas/variáveis + gastos diários)
     const totalExp = allExp.reduce((s, e) => s + Number(e.amount), 0)
-    const totalDaily = (daily.data || []).reduce((s, d) => s + Number(d.amount), 0)
-    const totalCard = allExp
+    const totalDaily = allDaily.reduce((s, d) => s + Number(d.amount), 0)
+
+    // Limite do cartão = despesas categorizadas como cartão + gastos diários pagos no cartão
+    const totalCardExp = allExp
       .filter(e => e.category === 'credit_card')
       .reduce((s, e) => s + Number(e.amount), 0)
+    const totalCardDaily = allDaily
+      .filter(d => d.payment_method === 'credit_card')
+      .reduce((s, d) => s + Number(d.amount), 0)
 
     setIncome(totalInc)
-    setCashExpenses(totalExp + totalDaily) // despesas + gastos diários
-    setCardUsed(totalCard)
+    setCashExpenses(totalExp + totalDaily)
+    setCardUsed(totalCardExp + totalCardDaily) // cartão de despesas + cartão do diário
     setLoading(false)
   }, [user, month, year])
 
