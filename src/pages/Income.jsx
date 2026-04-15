@@ -3,6 +3,7 @@ import { Plus, Trash2, TrendingUp, Loader2, X, DollarSign } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getIncome, addIncome, deleteIncome } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
+import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -50,7 +51,7 @@ export default function Income() {
     await addIncome({
       user_id: user.id,
       description: form.description,
-      amount: Number(form.amount),
+      amount: parseCurrency(form.amount),
       category: form.category,
       date: form.date,
       month: d.getMonth() + 1,
@@ -202,14 +203,10 @@ export default function Income() {
 
               <div>
                 <label className="label">Valor · Amount (R$)</label>
-                <input
+                <CurrencyInput
                   className="input-field"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="0,00"
                   value={form.amount}
-                  onChange={e => setForm({ ...form, amount: e.target.value })}
+                  onChange={v => setForm({ ...form, amount: v })}
                   required
                 />
               </div>

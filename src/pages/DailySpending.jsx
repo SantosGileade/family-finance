@@ -3,6 +3,7 @@ import { Plus, Trash2, Target, Loader2, X, TrendingDown, CheckCircle } from 'luc
 import { useAuth } from '../contexts/AuthContext'
 import { getDailySpending, addDailySpending, deleteDailySpending } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
+import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import { format, getDaysInMonth } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -49,7 +50,7 @@ export default function DailySpending() {
     await addDailySpending({
       user_id: user.id,
       description: form.description,
-      amount: Number(form.amount),
+      amount: parseCurrency(form.amount),
       date: form.date,
     })
     setForm({ description: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
@@ -312,18 +313,14 @@ export default function DailySpending() {
 
               <div>
                 <label className="label">Quanto? · Amount (R$)</label>
-                <input
+                <CurrencyInput
                   className="input-field text-lg font-semibold"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="0,00"
                   value={form.amount}
-                  onChange={e => setForm({ ...form, amount: e.target.value })}
+                  onChange={v => setForm({ ...form, amount: v })}
                   required
                   autoFocus
                 />
-                {form.amount && Number(form.amount) > DAILY_GOAL && (
+                {form.amount && parseCurrency(form.amount) > DAILY_GOAL && (
                   <p className="text-yellow-400 text-xs mt-1">
                     ⚠️ Esse gasto sozinho já supera a meta diária de R$ {DAILY_GOAL}!
                   </p>

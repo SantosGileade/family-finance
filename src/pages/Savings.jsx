@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Minus, Trash2, PiggyBank, Loader2, X, Trophy, Star } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getSavings, addSaving, deleteSaving } from '../lib/supabase'
+import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -60,7 +61,7 @@ export default function Savings() {
     e.preventDefault()
     setSaving(true)
     const prevTotal = total
-    const amount = modalType === 'withdraw' ? -Number(form.amount) : Number(form.amount)
+    const amount = modalType === 'withdraw' ? -parseCurrency(form.amount) : parseCurrency(form.amount)
     await addSaving({
       user_id: user.id,
       amount,
@@ -288,21 +289,17 @@ export default function Savings() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="label">Quanto? · Amount (R$)</label>
-                <input
+                <CurrencyInput
                   className="input-field text-xl font-bold"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="0,00"
                   value={form.amount}
-                  onChange={e => setForm({ ...form, amount: e.target.value })}
+                  onChange={v => setForm({ ...form, amount: v })}
                   required
                   autoFocus
                 />
-                {form.amount && (
+                {form.amount && parseCurrency(form.amount) > 0 && (
                   <p className="text-emerald-400 text-sm mt-1 font-medium">
                     {modalType === 'add' ? '💪 ' : '📤 '}
-                    {formatBRL(Number(form.amount))} {modalType === 'add' ? 'será guardado!' : 'será retirado.'}
+                    {formatBRL(parseCurrency(form.amount))} {modalType === 'add' ? 'será guardado!' : 'será retirado.'}
                   </p>
                 )}
               </div>
