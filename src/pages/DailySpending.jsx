@@ -87,6 +87,7 @@ export default function DailySpending() {
   const daysElapsed = month === now.getMonth() + 1 && year === now.getFullYear()
     ? now.getDate()
     : daysInMonth
+  const daysWithSpend = [...new Set(items.map(d => d.date))].length
   const avgDaily = daysElapsed > 0 ? totalMonth / daysElapsed : 0
 
   // Savings vs old habit
@@ -134,12 +135,16 @@ export default function DailySpending() {
         </div>
 
         <div className="card">
-          <p className="text-gray-400 text-xs mb-1">Média do mês · Monthly avg</p>
-          <p className={`text-2xl font-bold ${avgDaily <= DAILY_GOAL ? 'text-emerald-400' : 'text-yellow-400'}`}>
-            {formatBRL(avgDaily)}
+          <p className="text-gray-400 text-xs mb-1">Total do mês · Month total</p>
+          <p className="text-2xl font-bold text-white">
+            {formatBRL(totalMonth)}
           </p>
-          <p className="text-gray-500 text-xs mt-2">por dia / per day</p>
-          <p className="text-gray-600 text-xs mt-0.5">Total: {formatBRL(totalMonth)}</p>
+          <p className="text-gray-500 text-xs mt-2">
+            {daysWithSpend} {daysWithSpend === 1 ? 'dia registrado' : 'dias registrados'}
+          </p>
+          <p className="text-gray-600 text-xs mt-0.5">
+            {daysWithSpend > 0 ? `~${formatBRL(totalMonth / daysWithSpend)}/dia gasto` : 'Nenhum gasto ainda'}
+          </p>
         </div>
       </div>
 
@@ -196,7 +201,7 @@ export default function DailySpending() {
                 <span className="font-semibold">{day}</span>
                 {total > 0 && (
                   <span className="text-[9px] leading-tight">
-                    {(total / 1).toFixed(0) === total.toFixed(0) ? `${total}` : total.toFixed(0)}
+                    {parseFloat(total.toFixed(2))}
                   </span>
                 )}
               </button>

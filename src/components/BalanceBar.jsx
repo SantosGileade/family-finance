@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Wallet, CreditCard, RefreshCw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, getExpenses } from '../lib/supabase'
+import { getIncome, getExpenses, getDailySpending } from '../lib/supabase'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -22,21 +22,23 @@ export default function BalanceBar() {
   const load = useCallback(async () => {
     if (!user) return
     setLoading(true)
-    const [inc, exp] = await Promise.all([
+    const [inc, exp, daily] = await Promise.all([
       getIncome(user.id, month, year),
       getExpenses(user.id, month, year),
+      getDailySpending(user.id, month, year),
     ])
     const totalInc = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
 
-    // Todas as despesas entram no saldo (cartão também, pois a fatura vai sair do bolso)
+    // Todas as despesas entram no saldo (fixas + variáveis + cartão + gastos diários)
     const allExp = exp.data || []
-    const totalAll = allExp.reduce((s, e) => s + Number(e.amount), 0)
+    const totalExp = allExp.reduce((s, e) => s + Number(e.amount), 0)
+    const totalDaily = (daily.data || []).reduce((s, d) => s + Number(d.amount), 0)
     const totalCard = allExp
       .filter(e => e.category === 'credit_card')
       .reduce((s, e) => s + Number(e.amount), 0)
 
     setIncome(totalInc)
-    setCashExpenses(totalAll)  // agora inclui cartão
+    setCashExpenses(totalExp + totalDaily) // despesas + gastos diários
     setCardUsed(totalCard)
     setLoading(false)
   }, [user, month, year])
