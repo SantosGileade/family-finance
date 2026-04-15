@@ -28,17 +28,15 @@ export default function BalanceBar() {
     ])
     const totalInc = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
 
-    // Separa despesas: cartão vs. dinheiro real (débito/dinheiro)
+    // Todas as despesas entram no saldo (cartão também, pois a fatura vai sair do bolso)
     const allExp = exp.data || []
-    const totalCash = allExp
-      .filter(e => e.category !== 'credit_card')
-      .reduce((s, e) => s + Number(e.amount), 0)
+    const totalAll = allExp.reduce((s, e) => s + Number(e.amount), 0)
     const totalCard = allExp
       .filter(e => e.category === 'credit_card')
       .reduce((s, e) => s + Number(e.amount), 0)
 
     setIncome(totalInc)
-    setCashExpenses(totalCash)
+    setCashExpenses(totalAll)  // agora inclui cartão
     setCardUsed(totalCard)
     setLoading(false)
   }, [user, month, year])
