@@ -138,6 +138,13 @@ export const getMonthlyTotals = async (userId, year) => {
     .eq('user_id', userId)
     .eq('year', year)
 
+  const { data: dailyData } = await supabase
+    .from('daily_spending')
+    .select('date, amount')
+    .eq('user_id', userId)
+    .gte('date', `${year}-01-01`)
+    .lte('date', `${year}-12-31`)
+
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
   return months.map(month => {
     const income = (incomeData || [])
@@ -146,6 +153,9 @@ export const getMonthlyTotals = async (userId, year) => {
     const expenses = (expenseData || [])
       .filter(r => r.month === month)
       .reduce((s, r) => s + Number(r.amount), 0)
-    return { month, income, expenses, balance: income - expenses }
+    const daily = (dailyData || [])
+      .filter(r => new Date(r.date + 'T12:00:00').getMonth() + 1 === month)
+      .reduce((s, r) => s + Number(r.amount), 0)
+    return { month, income, expenses: expenses + daily, balance: income - expenses - daily }
   })
 }

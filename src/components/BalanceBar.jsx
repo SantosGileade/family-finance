@@ -47,7 +47,8 @@ export default function BalanceBar() {
       .reduce((s, d) => s + Number(d.amount), 0)
 
     setIncome(totalInc)
-    setCashExpenses(totalExp + totalDaily)
+    // Só fixas + variáveis (sem cartão) — cartão é dívida futura, não sai do caixa agora
+    setCashExpenses((totalExp - totalCardExp) + (totalDaily - totalCardDaily))
     setCardUsed(totalCardExp + totalCardDaily) // cartão de despesas + cartão do diário
     setLoading(false)
   }, [user, month, year])

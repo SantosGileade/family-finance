@@ -71,8 +71,12 @@ export default function Dashboard() {
 
   const totalIncome = income.reduce((s, i) => s + Number(i.amount), 0)
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0)
+    + daily.reduce((s, d) => s + Number(d.amount), 0)
   const totalSavings = savings.reduce((s, sv) => s + Number(sv.amount), 0)
-  const balance = totalIncome - totalExpenses
+  // Saldo = renda - despesas em dinheiro/débito (cartão é dívida futura)
+  const cashExpenses = expenses.filter(e => e.category !== 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+    + daily.filter(d => d.payment_method !== 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
+  const balance = totalIncome - cashExpenses
   const creditCard = expenses.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
     + daily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
 
