@@ -3,6 +3,7 @@ import { Plus, Minus, Trash2, PiggyBank, Loader2, X, Trophy, Star } from 'lucide
 import { useAuth } from '../contexts/AuthContext'
 import { getSavings, addSaving, deleteSaving } from '../lib/supabase'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -33,6 +34,7 @@ export default function Savings() {
   const [modalType, setModalType] = useState('add') // 'add' | 'withdraw'
   const [saving, setSaving] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
+  const [confirmId, setConfirmId] = useState(null)
 
   const [form, setForm] = useState({
     description: '',
@@ -85,6 +87,7 @@ export default function Savings() {
   const handleDelete = async (id) => {
     await deleteSaving(id)
     setItems(items.filter(i => i.id !== id))
+    setConfirmId(null)
   }
 
   const openModal = (type) => {
@@ -190,6 +193,15 @@ export default function Savings() {
         </div>
       </div>
 
+      {/* Confirm delete */}
+      {confirmId && (
+        <ConfirmDialog
+          message="Esse registro de poupança será removido permanentemente."
+          onConfirm={() => handleDelete(confirmId)}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
+
       {/* Tip */}
       <div className="card border border-emerald-500/15 bg-emerald-500/5">
         <p className="text-emerald-400 text-sm font-medium">{tipOfDay}</p>
@@ -264,7 +276,7 @@ export default function Savings() {
                   <p className={`font-bold shrink-0 ${isDeposit ? 'text-purple-400' : 'text-red-400'}`}>
                     {isDeposit ? '+' : ''}{formatBRL(item.amount)}
                   </p>
-                  <button onClick={() => handleDelete(item.id)} className="btn-danger shrink-0">
+                  <button onClick={() => setConfirmId(item.id)} className="btn-danger shrink-0">
                     <Trash2 size={14} />
                   </button>
                 </div>

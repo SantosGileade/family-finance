@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Wallet, CreditCard, RefreshCw } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { getIncome, getExpenses, getDailySpending } from '../lib/supabase'
 
@@ -10,6 +11,7 @@ const CARD_LIMIT = 400 // Limite do cartão de crédito em R$
 
 export default function BalanceBar() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const now = new Date()
   const month = now.getMonth() + 1
   const year = now.getFullYear()
@@ -98,13 +100,17 @@ export default function BalanceBar() {
           {/* Limite do cartão disponível */}
           <div className="flex items-center gap-1.5">
             <span className="text-gray-500 text-xs hidden sm:block">Cartão</span>
-            <div className={`flex items-center gap-1.5 rounded-lg px-3 py-1 border ${
-              isCardOk
-                ? cardAvailable < 100
-                  ? 'bg-yellow-500/10 border-yellow-500/20'
-                  : 'bg-blue-500/10 border-blue-500/20'
-                : 'bg-red-500/15 border-red-500/30'
-            }`}>
+            <button
+              onClick={() => navigate('/expenses', { state: { tab: 'credit_card' } })}
+              title="Ver despesas do cartão"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1 border transition-opacity hover:opacity-80 active:scale-95 ${
+                isCardOk
+                  ? cardAvailable < 100
+                    ? 'bg-yellow-500/10 border-yellow-500/20'
+                    : 'bg-blue-500/10 border-blue-500/20'
+                  : 'bg-red-500/15 border-red-500/30'
+              }`}
+            >
               <CreditCard size={13} className={
                 isCardOk
                   ? cardAvailable < 100 ? 'text-yellow-400' : 'text-blue-400'
@@ -117,7 +123,7 @@ export default function BalanceBar() {
               }`}>
                 {loading ? '...' : formatBRL(cardAvailable)}
               </span>
-            </div>
+            </button>
           </div>
 
           {/* Refresh */}

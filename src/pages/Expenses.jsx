@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, CreditCard, Loader2, X, Receipt } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getExpenses, addExpense, deleteExpense } from '../lib/supabase'
+import { getExpenses, addExpense, deleteExpense, getDailySpending, deleteDailySpending } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -30,15 +32,20 @@ const SUBCATEGORIES = {
 
 export default function Expenses() {
   const { user } = useAuth()
+  const location = useLocation()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
-  const [tab, setTab] = useState('all')
+
+  // Allow pre-selecting tab via navigation state (e.g. from BalanceBar click)
+  const [tab, setTab] = useState(location.state?.tab || 'all')
 
   const [items, setItems] = useState([])
+  const [dailyCardItems, setDailyCardItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [confirmId, setConfirmId] = useState(null)      // { id, source: 'expense' | 'daily' }
 
   const [form, setForm] = useState({
     description: '',
@@ -50,12 +57,26 @@ export default function Expenses() {
 
   const load = async () => {
     setLoading(true)
-    const { data } = await getExpenses(user.id, month, year)
-    setItems(data || [])
+    const [expRes, dailyRes] = await Promise.all([
+      getExpenses(user.id, month, year),
+      getDailySpending(user.id, month, year),
+    ])
+    setItems(expRes.data || [])
+    // Only keep daily items paid by credit card
+    setDailyCardItems(
+      (dailyRes.data || []).filter(d => d.payment_method === 'credit_card')
+    )
     setLoading(false)
   }
 
   useEffect(() => { load() }, [month, year])
+
+  // If navigated with a tab state, apply it
+  useEffect(() => {
+    if (location.state?.tab) {
+      setTab(location.state.tab)
+    }
+  }, [location.state])
 
   const handleAdd = async (e) => {
     e.preventDefault()
@@ -78,18 +99,28 @@ export default function Expenses() {
     window.dispatchEvent(new Event('finance-updated'))
   }
 
-  const handleDelete = async (id) => {
-    await deleteExpense(id)
-    setItems(items.filter(i => i.id !== id))
+  const handleDelete = async () => {
+    if (!confirmId) return
+    if (confirmId.source === 'expense') {
+      await deleteExpense(confirmId.id)
+      setItems(items.filter(i => i.id !== confirmId.id))
+    } else {
+      await deleteDailySpending(confirmId.id)
+      setDailyCardItems(dailyCardItems.filter(i => i.id !== confirmId.id))
+    }
+    setConfirmId(null)
     window.dispatchEvent(new Event('finance-updated'))
   }
 
-  const filtered = tab === 'all' ? items : items.filter(i => i.category === tab)
+  // Build filtered list depending on active tab
+  const filteredExpenses = tab === 'all' ? items : items.filter(i => i.category === tab)
 
-  const totalAll = items.reduce((s, i) => s + Number(i.amount), 0)
   const totalFixed = items.filter(i => i.category === 'fixed').reduce((s, i) => s + Number(i.amount), 0)
   const totalVar = items.filter(i => i.category === 'variable').reduce((s, i) => s + Number(i.amount), 0)
-  const totalCard = items.filter(i => i.category === 'credit_card').reduce((s, i) => s + Number(i.amount), 0)
+  const totalCardExp = items.filter(i => i.category === 'credit_card').reduce((s, i) => s + Number(i.amount), 0)
+  const totalCardDaily = dailyCardItems.reduce((s, i) => s + Number(i.amount), 0)
+  const totalCard = totalCardExp + totalCardDaily
+  const totalAll = totalFixed + totalVar + totalCard
 
   const totalsMap = { all: totalAll, fixed: totalFixed, variable: totalVar, credit_card: totalCard }
 
@@ -171,7 +202,8 @@ export default function Expenses() {
         <div className="flex items-center justify-center py-12">
           <div className="w-6 h-6 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : (tab !== 'credit_card' && filteredExpenses.length === 0) ||
+         (tab === 'credit_card' && filteredExpenses.length === 0 && dailyCardItems.length === 0) ? (
         <div className="card text-center py-10">
           <Receipt size={40} className="text-gray-600 mx-auto mb-3" />
           <p className="text-gray-400 font-medium">Nenhuma despesa registrada</p>
@@ -182,15 +214,16 @@ export default function Expenses() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((item) => {
+          {/* Regular expense items */}
+          {filteredExpenses.map((item) => {
             const ci = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.variable
             return (
-              <div key={item.id} className="card-hover flex items-center gap-3 p-3">
+              <div key={`exp-${item.id}`} className="card-hover flex items-center gap-3 p-3">
                 <div className={`w-10 h-10 ${ci.bg} rounded-xl flex items-center justify-center text-lg shrink-0`}>
                   {ci.emoji}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-white font-medium text-sm truncate">{item.description}</p>
                     {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
                   </div>
@@ -198,14 +231,53 @@ export default function Expenses() {
                 </div>
                 <div className="text-right">
                   <p className={`font-bold ${ci.text}`}>{formatBRL(item.amount)}</p>
-                  <button onClick={() => handleDelete(item.id)} className="btn-danger text-xs mt-1">
+                  <button
+                    onClick={() => setConfirmId({ id: item.id, source: 'expense' })}
+                    className="btn-danger text-xs mt-1"
+                  >
                     <Trash2 size={12} /> Excluir
                   </button>
                 </div>
               </div>
             )
           })}
+
+          {/* Daily spending items paid by credit card (only shown in Cartão tab or All tab) */}
+          {(tab === 'credit_card' || tab === 'all') && dailyCardItems.map((item) => (
+            <div key={`daily-${item.id}`} className="card-hover flex items-center gap-3 p-3 border border-red-500/10">
+              <div className="w-10 h-10 bg-red-500/15 rounded-xl flex items-center justify-center text-lg shrink-0">
+                💳
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-white font-medium text-sm truncate">{item.description}</p>
+                  <span className="text-xs bg-red-500/15 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                    📅 Diário
+                  </span>
+                </div>
+                <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-red-400">{formatBRL(item.amount)}</p>
+                <button
+                  onClick={() => setConfirmId({ id: item.id, source: 'daily' })}
+                  className="btn-danger text-xs mt-1"
+                >
+                  <Trash2 size={12} /> Excluir
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
+      )}
+
+      {/* Confirm delete */}
+      {confirmId && (
+        <ConfirmDialog
+          message="Essa despesa será removida permanentemente."
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmId(null)}
+        />
       )}
 
       {/* Modal */}

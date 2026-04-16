@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getDailySpending, addDailySpending, deleteDailySpending } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { format, getDaysInMonth } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -28,6 +29,7 @@ export default function DailySpending() {
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [selectedDay, setSelectedDay] = useState(null)
+  const [confirmId, setConfirmId] = useState(null)
 
   const [form, setForm] = useState({
     description: '',
@@ -65,6 +67,7 @@ export default function DailySpending() {
   const handleDelete = async (id) => {
     await deleteDailySpending(id)
     setItems(items.filter(i => i.id !== id))
+    setConfirmId(null)
     window.dispatchEvent(new Event('finance-updated'))
   }
 
@@ -282,7 +285,7 @@ export default function DailySpending() {
                   <p className="text-gray-500 text-xs">{item.date}</p>
                 </div>
                 <p className="text-red-400 font-semibold shrink-0">{formatBRL(item.amount)}</p>
-                <button onClick={() => handleDelete(item.id)} className="btn-danger shrink-0">
+                <button onClick={() => setConfirmId(item.id)} className="btn-danger shrink-0">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -290,6 +293,15 @@ export default function DailySpending() {
           </div>
         )}
       </div>
+
+      {/* Confirm delete */}
+      {confirmId && (
+        <ConfirmDialog
+          message="Esse gasto diário será removido permanentemente."
+          onConfirm={() => handleDelete(confirmId)}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
 
       {/* Modal */}
       {showModal && (

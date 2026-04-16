@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getIncome, addIncome, deleteIncome } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -27,6 +28,7 @@ export default function Income() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [confirmId, setConfirmId] = useState(null)
 
   const [form, setForm] = useState({
     description: '',
@@ -67,6 +69,7 @@ export default function Income() {
   const handleDelete = async (id) => {
     await deleteIncome(id)
     setItems(items.filter(i => i.id !== id))
+    setConfirmId(null)
     window.dispatchEvent(new Event('finance-updated'))
   }
 
@@ -138,7 +141,7 @@ export default function Income() {
                 <div className="text-right">
                   <p className="text-emerald-400 font-bold">{formatBRL(item.amount)}</p>
                   <button
-                    onClick={() => handleDelete(item.id)}
+                    onClick={() => setConfirmId(item.id)}
                     className="btn-danger text-xs mt-1"
                   >
                     <Trash2 size={12} /> Excluir
@@ -178,6 +181,15 @@ export default function Income() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Confirm delete */}
+      {confirmId && (
+        <ConfirmDialog
+          message="Essa entrada de renda será removida permanentemente."
+          onConfirm={() => handleDelete(confirmId)}
+          onCancel={() => setConfirmId(null)}
+        />
       )}
 
       {/* Modal */}
