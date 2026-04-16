@@ -74,6 +74,7 @@ export default function Dashboard() {
   const totalSavings = savings.reduce((s, sv) => s + Number(sv.amount), 0)
   const balance = totalIncome - totalExpenses
   const creditCard = expenses.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+    + daily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
 
   // Today's spending
   const todayStr = format(new Date(), 'yyyy-MM-dd')
