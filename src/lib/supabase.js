@@ -27,6 +27,11 @@ export const addIncome = async (income) => {
   return { data, error }
 }
 
+export const updateIncome = async (id, income) => {
+  const { data, error } = await supabase.from('income').update(income).eq('id', id).select()
+  return { data, error }
+}
+
 export const deleteIncome = async (id) => {
   const { error } = await supabase.from('income').delete().eq('id', id)
   return { error }
@@ -47,6 +52,11 @@ export const getExpenses = async (userId, month, year) => {
 
 export const addExpense = async (expense) => {
   const { data, error } = await supabase.from('expenses').insert([expense]).select()
+  return { data, error }
+}
+
+export const updateExpense = async (id, expense) => {
+  const { data, error } = await supabase.from('expenses').update(expense).eq('id', id).select()
   return { data, error }
 }
 
@@ -75,6 +85,11 @@ export const getDailySpending = async (userId, month, year) => {
 
 export const addDailySpending = async (spending) => {
   const { data, error } = await supabase.from('daily_spending').insert([spending]).select()
+  return { data, error }
+}
+
+export const updateDailySpending = async (id, spending) => {
+  const { data, error } = await supabase.from('daily_spending').update(spending).eq('id', id).select()
   return { data, error }
 }
 

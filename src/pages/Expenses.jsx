@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, CreditCard, Loader2, X, Receipt } from 'lucide-react'
+import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getExpenses, addExpense, deleteExpense, getDailySpending, deleteDailySpending } from '../lib/supabase'
+import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -46,6 +46,7 @@ export default function Expenses() {
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState(null)      // { id, source: 'expense' | 'daily' }
+  const [editingItem, setEditingItem] = useState(null)  // { id, source: 'expense' | 'daily' }
 
   const [form, setForm] = useState({
     description: '',
@@ -78,22 +79,59 @@ export default function Expenses() {
     }
   }, [location.state])
 
+  const openEdit = (item, source) => {
+    setEditingItem({ id: item.id, source })
+    setForm({
+      description: item.description,
+      amount: String(Number(item.amount).toFixed(2)).replace('.', ','),
+      category: item.category || 'credit_card',
+      date: item.date,
+      is_recurring: item.is_recurring || false,
+    })
+    setShowModal(true)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    setEditingItem(null)
+    setForm({ description: '', amount: '', category: 'fixed', date: format(new Date(), 'yyyy-MM-dd'), is_recurring: false })
+  }
+
   const handleAdd = async (e) => {
     e.preventDefault()
     setSaving(true)
     const d = new Date(form.date + 'T12:00:00')
-    await addExpense({
-      user_id: user.id,
-      description: form.description,
-      amount: parseCurrency(form.amount),
-      category: form.category,
-      date: form.date,
-      month: d.getMonth() + 1,
-      year: d.getFullYear(),
-      is_recurring: form.is_recurring,
-    })
-    setForm({ description: '', amount: '', category: 'fixed', date: format(new Date(), 'yyyy-MM-dd'), is_recurring: false })
-    setShowModal(false)
+    if (editingItem) {
+      if (editingItem.source === 'expense') {
+        await updateExpense(editingItem.id, {
+          description: form.description,
+          amount: parseCurrency(form.amount),
+          category: form.category,
+          date: form.date,
+          month: d.getMonth() + 1,
+          year: d.getFullYear(),
+          is_recurring: form.is_recurring,
+        })
+      } else {
+        await updateDailySpending(editingItem.id, {
+          description: form.description,
+          amount: parseCurrency(form.amount),
+          date: form.date,
+        })
+      }
+    } else {
+      await addExpense({
+        user_id: user.id,
+        description: form.description,
+        amount: parseCurrency(form.amount),
+        category: form.category,
+        date: form.date,
+        month: d.getMonth() + 1,
+        year: d.getFullYear(),
+        is_recurring: form.is_recurring,
+      })
+    }
+    closeModal()
     setSaving(false)
     await load()
     window.dispatchEvent(new Event('finance-updated'))
@@ -231,12 +269,14 @@ export default function Expenses() {
                 </div>
                 <div className="text-right">
                   <p className={`font-bold ${ci.text}`}>{formatBRL(item.amount)}</p>
-                  <button
-                    onClick={() => setConfirmId({ id: item.id, source: 'expense' })}
-                    className="btn-danger text-xs mt-1"
-                  >
-                    <Trash2 size={12} /> Excluir
-                  </button>
+                  <div className="flex gap-1 justify-end mt-1">
+                    <button onClick={() => openEdit(item, 'expense')} className="btn-secondary text-xs">
+                      <Pencil size={12} /> Editar
+                    </button>
+                    <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                      <Trash2 size={12} /> Excluir
+                    </button>
+                  </div>
                 </div>
               </div>
             )
@@ -259,12 +299,14 @@ export default function Expenses() {
               </div>
               <div className="text-right">
                 <p className="font-bold text-red-400">{formatBRL(item.amount)}</p>
-                <button
-                  onClick={() => setConfirmId({ id: item.id, source: 'daily' })}
-                  className="btn-danger text-xs mt-1"
-                >
-                  <Trash2 size={12} /> Excluir
-                </button>
+                <div className="flex gap-1 justify-end mt-1">
+                  <button onClick={() => openEdit(item, 'daily')} className="btn-secondary text-xs">
+                    <Pencil size={12} /> Editar
+                  </button>
+                  <button onClick={() => setConfirmId({ id: item.id, source: 'daily' })} className="btn-danger text-xs">
+                    <Trash2 size={12} /> Excluir
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -282,40 +324,42 @@ export default function Expenses() {
 
       {/* Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
           <div className="modal-content">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">Adicionar despesa · Add Expense</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white">
+              <h2 className="text-white font-semibold">{editingItem ? 'Editar despesa · Edit Expense' : 'Adicionar despesa · Add Expense'}</h2>
+              <button onClick={closeModal} className="text-gray-500 hover:text-white">
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleAdd} className="space-y-4">
-              <div>
-                <label className="label">Categoria · Category</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'fixed', label: '🏠 Fixa', sub: 'Fixed' },
-                    { value: 'variable', label: '🛒 Variável', sub: 'Variable' },
-                    { value: 'credit_card', label: '💳 Cartão', sub: 'Credit Card' },
-                  ].map(c => (
-                    <button
-                      key={c.value}
-                      type="button"
-                      onClick={() => setForm({ ...form, category: c.value })}
-                      className={`p-2.5 rounded-xl border text-center transition-all ${
-                        form.category === c.value
-                          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
-                          : 'border-white/10 bg-dark-600 text-gray-400'
-                      }`}
-                    >
-                      <p className="text-sm font-medium">{c.label}</p>
-                      <p className="text-xs text-gray-500">{c.sub}</p>
-                    </button>
-                  ))}
+              {editingItem?.source !== 'daily' && (
+                <div>
+                  <label className="label">Categoria · Category</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'fixed', label: '🏠 Fixa', sub: 'Fixed' },
+                      { value: 'variable', label: '🛒 Variável', sub: 'Variable' },
+                      { value: 'credit_card', label: '💳 Cartão', sub: 'Credit Card' },
+                    ].map(c => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => setForm({ ...form, category: c.value })}
+                        className={`p-2.5 rounded-xl border text-center transition-all ${
+                          form.category === c.value
+                            ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                            : 'border-white/10 bg-dark-600 text-gray-400'
+                        }`}
+                      >
+                        <p className="text-sm font-medium">{c.label}</p>
+                        <p className="text-xs text-gray-500">{c.sub}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="label">Descrição · Description</label>
@@ -355,22 +399,24 @@ export default function Expenses() {
                 />
               </div>
 
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.is_recurring}
-                  onChange={e => setForm({ ...form, is_recurring: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-600 bg-dark-600 text-emerald-500 focus:ring-emerald-500"
-                />
-                <span className="text-gray-300 text-sm">🔄 Despesa fixa mensal · Monthly recurring</span>
-              </label>
+              {editingItem?.source !== 'daily' && (
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_recurring}
+                    onChange={e => setForm({ ...form, is_recurring: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-600 bg-dark-600 text-emerald-500 focus:ring-emerald-500"
+                  />
+                  <span className="text-gray-300 text-sm">🔄 Despesa fixa mensal · Monthly recurring</span>
+                </label>
+              )}
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                <button type="button" onClick={closeModal} className="btn-secondary flex-1">
                   Cancelar
                 </button>
                 <button type="submit" disabled={saving} className="btn-primary flex-1">
-                  {saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Plus size={16} /> Salvar</>}
+                  {saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : editingItem ? <><Pencil size={16} /> Salvar alterações</> : <><Plus size={16} /> Salvar</>}
                 </button>
               </div>
             </form>

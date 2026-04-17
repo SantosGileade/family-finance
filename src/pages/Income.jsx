@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, TrendingUp, Loader2, X, DollarSign } from 'lucide-react'
+import { Plus, Trash2, TrendingUp, Loader2, X, DollarSign, Pencil } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, addIncome, deleteIncome } from '../lib/supabase'
+import { getIncome, addIncome, updateIncome, deleteIncome } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -29,6 +29,7 @@ export default function Income() {
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
+  const [editingId, setEditingId] = useState(null)
 
   const [form, setForm] = useState({
     description: '',
@@ -46,21 +47,41 @@ export default function Income() {
 
   useEffect(() => { load() }, [month, year])
 
+  const openEdit = (item) => {
+    setEditingId(item.id)
+    setForm({
+      description: item.description,
+      amount: String(Number(item.amount).toFixed(2)).replace('.', ','),
+      category: item.category,
+      date: item.date,
+    })
+    setShowModal(true)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    setEditingId(null)
+    setForm({ description: '', amount: '', category: 'salary', date: format(new Date(), 'yyyy-MM-dd') })
+  }
+
   const handleAdd = async (e) => {
     e.preventDefault()
     setSaving(true)
     const d = new Date(form.date + 'T12:00:00')
-    await addIncome({
-      user_id: user.id,
+    const payload = {
       description: form.description,
       amount: parseCurrency(form.amount),
       category: form.category,
       date: form.date,
       month: d.getMonth() + 1,
       year: d.getFullYear(),
-    })
-    setForm({ description: '', amount: '', category: 'salary', date: format(new Date(), 'yyyy-MM-dd') })
-    setShowModal(false)
+    }
+    if (editingId) {
+      await updateIncome(editingId, payload)
+    } else {
+      await addIncome({ user_id: user.id, ...payload })
+    }
+    closeModal()
     setSaving(false)
     await load()
     window.dispatchEvent(new Event('finance-updated'))
@@ -140,12 +161,14 @@ export default function Income() {
                 </div>
                 <div className="text-right">
                   <p className="text-emerald-400 font-bold">{formatBRL(item.amount)}</p>
-                  <button
-                    onClick={() => setConfirmId(item.id)}
-                    className="btn-danger text-xs mt-1"
-                  >
-                    <Trash2 size={12} /> Excluir
-                  </button>
+                  <div className="flex gap-1 justify-end mt-1">
+                    <button onClick={() => openEdit(item)} className="btn-secondary text-xs">
+                      <Pencil size={12} /> Editar
+                    </button>
+                    <button onClick={() => setConfirmId(item.id)} className="btn-danger text-xs">
+                      <Trash2 size={12} /> Excluir
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -197,8 +220,8 @@ export default function Income() {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal-content">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">Adicionar renda · Add Income</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white transition-colors">
+              <h2 className="text-white font-semibold">{editingId ? 'Editar renda · Edit Income' : 'Adicionar renda · Add Income'}</h2>
+              <button onClick={closeModal} className="text-gray-500 hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -250,11 +273,11 @@ export default function Income() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                <button type="button" onClick={closeModal} className="btn-secondary flex-1">
                   Cancelar
                 </button>
                 <button type="submit" disabled={saving} className="btn-primary flex-1">
-                  {saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Plus size={16} /> Salvar</>}
+                  {saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : editingId ? <><Pencil size={16} /> Salvar alterações</> : <><Plus size={16} /> Salvar</>}
                 </button>
               </div>
             </form>
