@@ -51,7 +51,7 @@ export default function Income() {
     setEditingId(item.id)
     setForm({
       description: item.description,
-      amount: String(Number(item.amount).toFixed(2)).replace('.', ','),
+      amount: String(Math.round(Number(item.amount) * 100)),
       category: item.category,
       date: item.date,
     })

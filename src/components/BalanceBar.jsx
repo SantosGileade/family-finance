@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Wallet, CreditCard, RefreshCw } from 'lucide-react'
+import { Wallet, CreditCard, RefreshCw, Settings, X, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, getExpenses, getDailySpending } from '../lib/supabase'
+import { getIncome, getExpenses, getDailySpending, getProfile, upsertProfile } from '../lib/supabase'
+import CurrencyInput, { parseCurrency } from './CurrencyInput'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-const CARD_LIMIT = 400 // Limite do cartão de crédito em R$
 
 export default function BalanceBar() {
   const { user } = useAuth()
@@ -17,9 +16,21 @@ export default function BalanceBar() {
   const year = now.getFullYear()
 
   const [income, setIncome] = useState(0)
-  const [cashExpenses, setCashExpenses] = useState(0) // só fixas + variáveis (sem cartão)
-  const [cardUsed, setCardUsed] = useState(0)         // só cartão de crédito
+  const [cashExpenses, setCashExpenses] = useState(0)
+  const [cardUsed, setCardUsed] = useState(0)
+  const [cardLimit, setCardLimit] = useState(400)
   const [loading, setLoading] = useState(true)
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitInput, setLimitInput] = useState('')
+  const [savingLimit, setSavingLimit] = useState(false)
+
+  // Carrega limite do cartão do perfil (só uma vez por usuário)
+  useEffect(() => {
+    if (!user) return
+    getProfile(user.id).then(({ data }) => {
+      if (data?.card_limit) setCardLimit(data.card_limit)
+    })
+  }, [user])
 
   const load = useCallback(async () => {
     if (!user) return
@@ -63,13 +74,25 @@ export default function BalanceBar() {
     return () => window.removeEventListener('finance-updated', handler)
   }, [load])
 
-  // Saldo real = renda - despesas em dinheiro (cartão é dívida futura, não sai do bolso agora)
+  const handleSaveLimit = async (e) => {
+    e.preventDefault()
+    const value = parseCurrency(limitInput)
+    if (!value || value <= 0) return
+    setSavingLimit(true)
+    await upsertProfile({ id: user.id, card_limit: value })
+    setCardLimit(value)
+    setSavingLimit(false)
+    setShowLimitModal(false)
+    setLimitInput('')
+  }
+
   const balance = income - cashExpenses
-  const cardAvailable = CARD_LIMIT - cardUsed
+  const cardAvailable = cardLimit - cardUsed
   const isBalancePositive = balance >= 0
   const isCardOk = cardAvailable > 0
 
   return (
+    <>
     <div className="bg-dark-900 border-b border-white/5 px-4 py-2">
       <div className="max-w-4xl mx-auto flex items-center gap-3 flex-wrap justify-between">
 
@@ -100,6 +123,13 @@ export default function BalanceBar() {
 
           {/* Limite do cartão disponível */}
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => { setLimitInput(String(Math.round(cardLimit * 100))); setShowLimitModal(true) }}
+              title="Configurar limite do cartão"
+              className="text-gray-600 hover:text-gray-400 transition-colors"
+            >
+              <Settings size={12} />
+            </button>
             <span className="text-gray-500 text-xs hidden sm:block">Cartão</span>
             <button
               onClick={() => navigate('/expenses', { state: { tab: 'credit_card' } })}
@@ -138,5 +168,46 @@ export default function BalanceBar() {
         </div>
       </div>
     </div>
+
+    {/* Modal: configurar limite do cartão */}
+    {showLimitModal && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={(e) => e.target === e.currentTarget && setShowLimitModal(false)}>
+        <div className="bg-dark-700 border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white font-semibold">💳 Limite do cartão</h2>
+            <button onClick={() => setShowLimitModal(false)} className="text-gray-500 hover:text-white">
+              <X size={20} />
+            </button>
+          </div>
+          <p className="text-gray-400 text-sm mb-4">
+            Limite atual: <span className="text-white font-semibold">{formatBRL(cardLimit)}</span>
+          </p>
+          <form onSubmit={handleSaveLimit} className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-1">Novo limite · New limit (R$)</label>
+              <CurrencyInput
+                className="w-full bg-dark-600 border border-white/10 rounded-xl px-4 py-3 text-white text-lg font-semibold focus:outline-none focus:border-emerald-500/50"
+                value={limitInput}
+                onChange={setLimitInput}
+                autoFocus
+                required
+              />
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowLimitModal(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-400 hover:text-white transition-colors text-sm">
+                Cancelar
+              </button>
+              <button type="submit" disabled={savingLimit}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+                {savingLimit ? <><Loader2 size={15} className="animate-spin" /> Salvando...</> : 'Salvar limite'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

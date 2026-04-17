@@ -53,7 +53,6 @@ export default function Expenses() {
     amount: '',
     category: 'fixed',
     date: format(new Date(), 'yyyy-MM-dd'),
-    is_recurring: false,
   })
 
   const load = async () => {
@@ -83,10 +82,9 @@ export default function Expenses() {
     setEditingItem({ id: item.id, source })
     setForm({
       description: item.description,
-      amount: String(Number(item.amount).toFixed(2)).replace('.', ','),
+      amount: String(Math.round(Number(item.amount) * 100)),
       category: item.category || 'credit_card',
       date: item.date,
-      is_recurring: item.is_recurring || false,
     })
     setShowModal(true)
   }
@@ -94,42 +92,69 @@ export default function Expenses() {
   const closeModal = () => {
     setShowModal(false)
     setEditingItem(null)
-    setForm({ description: '', amount: '', category: 'fixed', date: format(new Date(), 'yyyy-MM-dd'), is_recurring: false })
+    setForm({ description: '', amount: '', category: 'fixed', date: format(new Date(), 'yyyy-MM-dd') })
   }
 
   const handleAdd = async (e) => {
     e.preventDefault()
     setSaving(true)
     const d = new Date(form.date + 'T12:00:00')
+    const enteredMonth = d.getMonth() + 1
+    const enteredYear = d.getFullYear()
+    const enteredDay = d.getDate()
+    const amount = parseCurrency(form.amount)
+
     if (editingItem) {
       if (editingItem.source === 'expense') {
         await updateExpense(editingItem.id, {
           description: form.description,
-          amount: parseCurrency(form.amount),
+          amount,
           category: form.category,
           date: form.date,
-          month: d.getMonth() + 1,
-          year: d.getFullYear(),
-          is_recurring: form.is_recurring,
+          month: enteredMonth,
+          year: enteredYear,
+          is_recurring: form.category === 'fixed',
         })
       } else {
         await updateDailySpending(editingItem.id, {
           description: form.description,
-          amount: parseCurrency(form.amount),
+          amount,
           date: form.date,
         })
       }
     } else {
+      // Cria a despesa do mês atual
       await addExpense({
         user_id: user.id,
         description: form.description,
-        amount: parseCurrency(form.amount),
+        amount,
         category: form.category,
         date: form.date,
-        month: d.getMonth() + 1,
-        year: d.getFullYear(),
-        is_recurring: form.is_recurring,
+        month: enteredMonth,
+        year: enteredYear,
+        is_recurring: form.category === 'fixed',
       })
+
+      // Se for fixa, replica automaticamente nos meses futuros do ano
+      if (form.category === 'fixed') {
+        const futures = []
+        for (let m = enteredMonth + 1; m <= 12; m++) {
+          const lastDay = new Date(enteredYear, m, 0).getDate()
+          const day = Math.min(enteredDay, lastDay)
+          const dateStr = `${enteredYear}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          futures.push(addExpense({
+            user_id: user.id,
+            description: form.description,
+            amount,
+            category: 'fixed',
+            date: dateStr,
+            month: m,
+            year: enteredYear,
+            is_recurring: true,
+          }))
+        }
+        await Promise.all(futures)
+      }
     }
     closeModal()
     setSaving(false)
@@ -399,16 +424,10 @@ export default function Expenses() {
                 />
               </div>
 
-              {editingItem?.source !== 'daily' && (
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.is_recurring}
-                    onChange={e => setForm({ ...form, is_recurring: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-600 bg-dark-600 text-emerald-500 focus:ring-emerald-500"
-                  />
-                  <span className="text-gray-300 text-sm">🔄 Despesa fixa mensal · Monthly recurring</span>
-                </label>
+              {!editingItem && form.category === 'fixed' && (
+                <p className="text-blue-400 text-xs bg-blue-500/10 border border-blue-500/20 rounded-xl px-3 py-2">
+                  🔄 Será criada automaticamente para todos os meses restantes do ano.
+                </p>
               )}
 
               <div className="flex gap-3 pt-2">
