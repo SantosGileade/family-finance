@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, CreditCard, Calendar, PiggyBank, Lightbulb } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, CreditCard, Calendar, PiggyBank, FileUp } from 'lucide-react'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Início' },
@@ -7,7 +7,7 @@ const navItems = [
   { to: '/expenses', icon: CreditCard, label: 'Despesas' },
   { to: '/daily', icon: Calendar, label: 'Diário' },
   { to: '/savings', icon: PiggyBank, label: 'Poupança' },
-  { to: '/tips', icon: Lightbulb, label: 'Dicas' },
+  { to: '/import', icon: FileUp, label: 'Importar' },
 ]
 
 export default function BottomNav() {

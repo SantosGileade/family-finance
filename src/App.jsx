@@ -8,6 +8,7 @@ import Expenses from './pages/Expenses'
 import DailySpending from './pages/DailySpending'
 import Savings from './pages/Savings'
 import Tips from './pages/Tips'
+import Import from './pages/Import'
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth()
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="daily" element={<DailySpending />} />
         <Route path="savings" element={<Savings />} />
         <Route path="tips" element={<Tips />} />
+        <Route path="import" element={<Import />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
+import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -42,6 +42,7 @@ export default function Expenses() {
 
   const [items, setItems] = useState([])
   const [dailyCardItems, setDailyCardItems] = useState([])
+  const [dailyCashItems, setDailyCashItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -62,10 +63,9 @@ export default function Expenses() {
       getDailySpending(user.id, month, year),
     ])
     setItems(expRes.data || [])
-    // Only keep daily items paid by credit card
-    setDailyCardItems(
-      (dailyRes.data || []).filter(d => d.payment_method === 'credit_card')
-    )
+    const allDaily = dailyRes.data || []
+    setDailyCardItems(allDaily.filter(d => d.payment_method === 'credit_card'))
+    setDailyCashItems(allDaily.filter(d => d.payment_method !== 'credit_card'))
     setLoading(false)
   }
 
@@ -122,6 +122,15 @@ export default function Expenses() {
           date: form.date,
         })
       }
+    } else if (form.category === 'credit_card') {
+      // Cartão vai direto pro daily_spending para aparecer também no Diário
+      await addDailySpending({
+        user_id: user.id,
+        description: form.description,
+        amount,
+        payment_method: 'credit_card',
+        date: form.date,
+      })
     } else {
       // Cria a despesa do mês atual
       await addExpense({
@@ -183,7 +192,8 @@ export default function Expenses() {
   const totalCardExp = items.filter(i => i.category === 'credit_card').reduce((s, i) => s + Number(i.amount), 0)
   const totalCardDaily = dailyCardItems.reduce((s, i) => s + Number(i.amount), 0)
   const totalCard = totalCardExp + totalCardDaily
-  const totalAll = totalFixed + totalVar + totalCard
+  const totalDailyCash = dailyCashItems.reduce((s, i) => s + Number(i.amount), 0)
+  const totalAll = totalFixed + totalVar + totalCard + totalDailyCash
 
   const totalsMap = { all: totalAll, fixed: totalFixed, variable: totalVar, credit_card: totalCard }
 
@@ -306,6 +316,35 @@ export default function Expenses() {
               </div>
             )
           })}
+
+          {/* Daily spending items paid by cash/debit (only shown in All tab) */}
+          {tab === 'all' && dailyCashItems.map((item) => (
+            <div key={`daily-cash-${item.id}`} className="card-hover flex items-center gap-3 p-3 border border-yellow-500/10">
+              <div className="w-10 h-10 bg-yellow-500/15 rounded-xl flex items-center justify-center text-lg shrink-0">
+                📅
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-white font-medium text-sm truncate">{item.description}</p>
+                  <span className="text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                    📅 Diário débito
+                  </span>
+                </div>
+                <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-yellow-400">{formatBRL(item.amount)}</p>
+                <div className="flex gap-1 justify-end mt-1">
+                  <button onClick={() => openEdit(item, 'daily')} className="btn-secondary text-xs">
+                    <Pencil size={12} /> Editar
+                  </button>
+                  <button onClick={() => setConfirmId({ id: item.id, source: 'daily' })} className="btn-danger text-xs">
+                    <Trash2 size={12} /> Excluir
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
 
           {/* Daily spending items paid by credit card (only shown in Cartão tab or All tab) */}
           {(tab === 'credit_card' || tab === 'all') && dailyCardItems.map((item) => (
