@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Target, Loader2, X, TrendingDown, CheckCircle } from 'lucide-react'
+import { Plus, Trash2, Target, Loader2, X, TrendingDown } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getDailySpending, addDailySpending, deleteDailySpending } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
@@ -11,7 +11,6 @@ const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const DAILY_GOAL = 30
-const DAILY_GOAL_OLD = 60 // o valor atual
 
 const SPENDING_TAGS = [
   '🍔 Lanche', '🛒 Mercado', '🚌 Transporte', '☕ Café',
@@ -95,9 +94,6 @@ export default function DailySpending() {
   const daysWithSpend = [...new Set(items.map(d => d.date))].length
   const avgDaily = daysElapsed > 0 ? totalMonth / daysElapsed : 0
 
-  // Savings vs old habit
-  const savedVsOld = Math.max(0, (DAILY_GOAL_OLD - avgDaily) * daysElapsed)
-
   // Calendar grid
   const firstDay = new Date(year, month - 1, 1).getDay() // 0=Sun
   const calDays = []
@@ -152,24 +148,6 @@ export default function DailySpending() {
           </p>
         </div>
       </div>
-
-      {/* Savings vs old habit */}
-      {savedVsOld > 0 && (
-        <div className="card border border-emerald-500/20 bg-emerald-500/5">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle size={18} className="text-emerald-400" />
-            <p className="text-emerald-400 font-semibold text-sm">
-              Você economizou vs. hábito antigo!
-            </p>
-          </div>
-          <p className="text-2xl font-bold text-white">{formatBRL(savedVsOld)}</p>
-          <p className="text-gray-500 text-xs mt-1">
-            Em {daysElapsed} dias, você gastou {formatBRL(avgDaily)}/dia vs {formatBRL(DAILY_GOAL_OLD)}/dia antes.
-            <br />
-            <span className="italic text-gray-600">Savings compared to old daily habit!</span>
-          </p>
-        </div>
-      )}
 
       {/* Add button */}
       <button onClick={() => openModal(todayStr)} className="btn-primary w-full">

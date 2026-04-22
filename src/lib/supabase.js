@@ -153,24 +153,32 @@ export const getMonthlyTotals = async (userId, year) => {
     .eq('user_id', userId)
     .eq('year', year)
 
+  // Daily spending: group by month using the date field
+  const startDate = `${year}-01-01`
+  const endDate = `${year}-12-31`
   const { data: dailyData } = await supabase
     .from('daily_spending')
     .select('date, amount')
     .eq('user_id', userId)
-    .gte('date', `${year}-01-01`)
-    .lte('date', `${year}-12-31`)
+    .gte('date', startDate)
+    .lte('date', endDate)
 
-  const months = Array.from({ length: 12 }, (_, i) => i + 1)
-  return months.map(month => {
-    const income = (incomeData || [])
-      .filter(r => r.month === month)
+  const result = []
+  for (let m = 1; m <= 12; m++) {
+    const inc = (incomeData || [])
+      .filter(r => r.month === m)
       .reduce((s, r) => s + Number(r.amount), 0)
-    const expenses = (expenseData || [])
-      .filter(r => r.month === month)
+
+    const exp = (expenseData || [])
+      .filter(r => r.month === m)
       .reduce((s, r) => s + Number(r.amount), 0)
+
     const daily = (dailyData || [])
-      .filter(r => new Date(r.date + 'T12:00:00').getMonth() + 1 === month)
+      .filter(r => new Date(r.date).getMonth() + 1 === m)
       .reduce((s, r) => s + Number(r.amount), 0)
-    return { month, income, expenses: expenses + daily, balance: income - expenses - daily }
-  })
+
+    result.push({ month: m, income: inc, expenses: exp + daily })
+  }
+
+  return result
 }
