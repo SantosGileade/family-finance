@@ -4,23 +4,21 @@ import { useAuth } from '../contexts/AuthContext'
 import { addDailySpending } from '../lib/supabase'
 import { format } from 'date-fns'
 
-const parseCurrency = (str) => {
-  const normalized = String(str).replace(',', '.')
-  const val = parseFloat(normalized)
-  return isNaN(val) ? 0 : val
-}
+// Máscara estilo bancário: armazena centavos como inteiro
+// 0 → "0,00" | 1234 → "12,34" | 100000 → "1.000,00"
+const centsToDisplay = (cents) =>
+  (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export default function QuickAdd() {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
-  const [amount, setAmount] = useState('')
+  const [cents, setCents] = useState(0)           // valor em centavos
   const [description, setDescription] = useState('')
-  const [method, setMethod] = useState('debit') // 'debit' | 'credit_card'
+  const [method, setMethod] = useState('debit')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const amountRef = useRef(null)
 
-  // Foca no campo de valor ao abrir
   useEffect(() => {
     if (open) {
       setTimeout(() => amountRef.current?.focus(), 120)
@@ -28,7 +26,7 @@ export default function QuickAdd() {
   }, [open])
 
   const handleOpen = () => {
-    setAmount('')
+    setCents(0)
     setDescription('')
     setMethod('debit')
     setSaved(false)
@@ -40,9 +38,16 @@ export default function QuickAdd() {
     setOpen(false)
   }
 
+  // Máscara: aceita só dígitos, empilha da direita pra esquerda (estilo bancário)
+  const handleAmountInput = (e) => {
+    const digits = e.target.value.replace(/\D/g, '')
+    const num = parseInt(digits || '0', 10)
+    // Limita a 9 dígitos (R$ 9.999.999,99)
+    if (num <= 999999999) setCents(num)
+  }
+
   const handleSave = async () => {
-    const val = parseCurrency(amount)
-    if (!val || val <= 0) {
+    if (cents <= 0) {
       amountRef.current?.focus()
       return
     }
@@ -50,7 +55,7 @@ export default function QuickAdd() {
     await addDailySpending({
       user_id: user.id,
       description: description.trim() || 'Gasto rápido',
-      amount: val,
+      amount: cents / 100,
       payment_method: method === 'credit_card' ? 'credit_card' : 'debit',
       date: format(new Date(), 'yyyy-MM-dd'),
     })
@@ -63,7 +68,6 @@ export default function QuickAdd() {
     }, 800)
   }
 
-  // Salvar com Enter no campo de valor (se descrição estiver vazia, foca nela)
   const handleAmountKeyDown = (e) => {
     if (e.key === 'Enter') {
       if (!description.trim()) {
@@ -97,15 +101,14 @@ export default function QuickAdd() {
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           onClick={(e) => e.target === e.currentTarget && handleClose()}
         >
-          {/* Fundo escurecido */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
 
-          {/* Sheet / Modal */}
+          {/* Sheet */}
           <div className="relative w-full sm:max-w-sm bg-dark-700 rounded-t-3xl sm:rounded-2xl
                           border border-white/10 shadow-2xl z-10
                           animate-slide-up px-5 pt-5 pb-8 sm:pb-5">
 
-            {/* Handle bar (mobile) */}
+            {/* Handle bar mobile */}
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-5 sm:hidden" />
 
             {/* Header */}
@@ -124,31 +127,31 @@ export default function QuickAdd() {
               </button>
             </div>
 
-            {/* Valor grande */}
+            {/* Valor com máscara */}
             <div className="mb-4">
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl font-bold">R$</span>
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold"
+                      style={{ fontSize: 18 }}>
+                  R$
+                </span>
                 <input
                   ref={amountRef}
                   type="text"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  value={amount}
-                  onChange={(e) => {
-                    // Permite só números, vírgula e ponto
-                    const v = e.target.value.replace(/[^0-9.,]/g, '')
-                    setAmount(v)
-                  }}
+                  inputMode="numeric"
+                  value={centsToDisplay(cents)}
+                  onChange={handleAmountInput}
                   onKeyDown={handleAmountKeyDown}
+                  // font-size >= 16px evita zoom automático do iOS
+                  style={{ fontSize: 26 }}
                   className="w-full bg-dark-600 border border-white/10 rounded-2xl
-                             pl-14 pr-4 py-4 text-white text-2xl font-bold
-                             placeholder-gray-600 focus:outline-none focus:border-emerald-500/50
+                             pl-14 pr-4 py-4 text-white font-bold text-right
+                             focus:outline-none focus:border-emerald-500/50
                              focus:ring-2 focus:ring-emerald-500/20 transition-all"
                 />
               </div>
             </div>
 
-            {/* Descrição */}
+            {/* Descrição — font-size 16px evita zoom iOS */}
             <div className="mb-4">
               <input
                 id="qa-desc"
@@ -157,8 +160,9 @@ export default function QuickAdd() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                style={{ fontSize: 16 }}
                 className="w-full bg-dark-600 border border-white/10 rounded-xl
-                           px-4 py-3 text-white text-sm placeholder-gray-600
+                           px-4 py-3 text-white placeholder-gray-600
                            focus:outline-none focus:border-emerald-500/50
                            focus:ring-2 focus:ring-emerald-500/20 transition-all"
               />
@@ -190,16 +194,17 @@ export default function QuickAdd() {
               </button>
             </div>
 
-            {/* Botão salvar */}
+            {/* Salvar */}
             <button
               onClick={handleSave}
               disabled={saving || saved}
-              className={`w-full py-4 rounded-2xl font-bold text-base transition-all
+              className={`w-full py-4 rounded-2xl font-bold transition-all
                          flex items-center justify-center gap-2 active:scale-95 ${
                 saved
                   ? 'bg-emerald-600 text-white'
                   : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20'
               }`}
+              style={{ fontSize: 16 }}
             >
               {saving ? (
                 <><Loader2 size={18} className="animate-spin" /> Salvando...</>
