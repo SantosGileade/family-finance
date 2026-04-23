@@ -141,10 +141,19 @@ export default function QuickAdd() {
                   value={centsToDisplay(cents)}
                   onChange={handleAmountInput}
                   onKeyDown={handleAmountKeyDown}
+                  // Sempre força cursor no final — evita inserção no meio do número
+                  onFocus={(e) => {
+                    const len = e.target.value.length
+                    e.target.setSelectionRange(len, len)
+                  }}
+                  onClick={(e) => {
+                    const len = e.target.value.length
+                    e.target.setSelectionRange(len, len)
+                  }}
                   // font-size >= 16px evita zoom automático do iOS
                   style={{ fontSize: 26 }}
                   className="w-full bg-dark-600 border border-white/10 rounded-2xl
-                             pl-14 pr-4 py-4 text-white font-bold text-right
+                             pl-14 pr-4 py-4 text-white font-bold
                              focus:outline-none focus:border-emerald-500/50
                              focus:ring-2 focus:ring-emerald-500/20 transition-all"
                 />
