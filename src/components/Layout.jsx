@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import BalanceBar from './BalanceBar'
+import QuickAdd from './QuickAdd'
 
 export default function Layout() {
   return (
@@ -23,6 +24,9 @@ export default function Layout() {
 
       {/* Bottom nav - visible on mobile */}
       <BottomNav />
+
+      {/* Floating quick-add button - visible on all pages */}
+      <QuickAdd />
     </div>
   )
 }
