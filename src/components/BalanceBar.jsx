@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Wallet, CreditCard, RefreshCw, Settings, X, Loader2 } from 'lucide-react'
+import { Wallet, CreditCard, RefreshCw, Settings, X, Loader2, Shield } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { getIncome, getExpenses, getDailySpending, getProfile, upsertProfile } from '../lib/supabase'
@@ -9,7 +9,7 @@ const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export default function BalanceBar() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const navigate = useNavigate()
   const now = new Date()
   const month = now.getMonth() + 1
@@ -165,6 +165,18 @@ export default function BalanceBar() {
           >
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           </button>
+
+          {/* Botão Admin — visível só para administradores */}
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/admin')}
+              title="Painel Admin"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-500/15 border border-purple-500/20 text-purple-400 hover:bg-purple-500/25 transition-colors active:scale-95"
+            >
+              <Shield size={12} />
+              <span className="text-xs font-medium hidden sm:block">Admin</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

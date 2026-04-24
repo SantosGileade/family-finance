@@ -138,6 +138,23 @@ export const upsertProfile = async (profile) => {
   return { data, error }
 }
 
+// ─── ADMIN ────────────────────────────────────────────────────────────────────
+
+export const getAllProfiles = async () => {
+  const { data, error } = await supabase.rpc('admin_get_all_profiles')
+  return { data, error }
+}
+
+export const updateUserPlan = async (userId, updates) => {
+  const { data, error } = await supabase.rpc('admin_update_user_plan', {
+    p_user_id: userId,
+    p_plano_ativo: updates.plano_ativo ?? null,
+    p_data_expiracao: updates.data_expiracao ?? null
+  })
+  return { data: data ? [data] : null, error }
+}
+
+
 // ─── MULTI-MONTH DATA (for charts) ────────────────────────────────────────────
 
 export const getMonthlyTotals = async (userId, year) => {
@@ -182,3 +199,4 @@ export const getMonthlyTotals = async (userId, year) => {
 
   return result
 }
+    
