@@ -3,6 +3,7 @@ import { Zap, X, Loader2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { addDailySpending } from '../lib/supabase'
 import { format } from 'date-fns'
+import { useLang } from '../hooks/useLang'
 
 // Máscara estilo bancário: armazena centavos como inteiro
 // 0 → "0,00" | 1234 → "12,34" | 100000 → "1.000,00"
@@ -10,7 +11,8 @@ const centsToDisplay = (cents) =>
   (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export default function QuickAdd() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
+  const t = useLang()
   const [open, setOpen] = useState(false)
   const [cents, setCents] = useState(0)           // valor em centavos
   const [description, setDescription] = useState('')
@@ -119,7 +121,7 @@ export default function QuickAdd() {
                 </div>
                 <div>
                   <p className="text-white font-semibold text-sm leading-tight">Gasto Rápido ⚡</p>
-                  <p className="text-gray-500 text-xs">Quick Add</p>
+                  {isAdmin && <p className="text-gray-500 text-xs">Quick Add</p>}
                 </div>
               </div>
               <button onClick={handleClose} className="text-gray-500 hover:text-white p-1">

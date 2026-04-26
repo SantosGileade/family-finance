@@ -16,7 +16,7 @@ const navItems = [
 ]
 
 export default function Sidebar() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, isAdmin } = useAuth()
 
   return (
     <aside className="hidden sm:flex flex-col w-64 bg-dark-900 border-r border-white/5 p-4">
@@ -51,7 +51,7 @@ export default function Sidebar() {
                 <Icon size={18} className={isActive ? 'text-emerald-400' : 'text-gray-500 group-hover:text-gray-300'} />
                 <div>
                   <p className="text-sm font-medium leading-tight">{label}</p>
-                  <p className="text-xs text-gray-600 leading-tight">{en}</p>
+                  {isAdmin && <p className="text-xs text-gray-600 leading-tight">{en}</p>}
                 </div>
               </>
             )}
@@ -67,7 +67,7 @@ export default function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-white text-xs font-medium truncate">{user?.email}</p>
-            <p className="text-gray-500 text-xs">Família 👨‍👩</p>
+            {isAdmin && <p className="text-gray-500 text-xs">Família 👨‍👩</p>}
           </div>
         </div>
         <button
@@ -75,7 +75,7 @@ export default function Sidebar() {
           className="flex items-center gap-2 text-gray-500 hover:text-red-400 text-sm px-2 py-1.5 w-full rounded-lg hover:bg-red-500/10 transition-all duration-200"
         >
           <LogOut size={15} />
-          Sair / Sign out
+          {isAdmin ? 'Sair / Sign out' : 'Sair'}
         </button>
       </div>
     </aside>

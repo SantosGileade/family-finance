@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getIncome, getExpenses, getDailySpending, getSavings, getMonthlyTotals } from '../lib/supabase'
+import { useLang } from '../hooks/useLang'
 import MonthSelector from '../components/MonthSelector'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -38,7 +39,8 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
+  const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -120,7 +122,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">Dashboard 📊</h1>
-          <p className="text-gray-500 text-sm">Visão geral · Overview</p>
+          <p className="text-gray-500 text-sm">{t('Visão geral · Overview')}</p>
         </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
@@ -149,7 +151,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="stat-card border border-emerald-500/20">
           <div className="flex items-center justify-between">
-            <span className="stat-label">Renda · Income</span>
+            <span className="stat-label">{t('Renda · Income')}</span>
             <TrendingUp size={16} className="text-emerald-400" />
           </div>
           <p className="stat-value text-emerald-400">{formatBRL(totalIncome)}</p>
@@ -157,7 +159,7 @@ export default function Dashboard() {
 
         <div className="stat-card border border-red-500/10">
           <div className="flex items-center justify-between">
-            <span className="stat-label">Despesas · Expenses</span>
+            <span className="stat-label">{t('Despesas · Expenses')}</span>
             <TrendingDown size={16} className="text-red-400" />
           </div>
           <p className="stat-value text-red-400">{formatBRL(totalExpenses)}</p>
@@ -165,7 +167,7 @@ export default function Dashboard() {
 
         <div className={`stat-card border ${balance >= 0 ? 'border-blue-500/20' : 'border-red-500/20'}`}>
           <div className="flex items-center justify-between">
-            <span className="stat-label">Saldo · Balance</span>
+            <span className="stat-label">{t('Saldo · Balance')}</span>
             <Wallet size={16} className={balance >= 0 ? 'text-blue-400' : 'text-red-400'} />
           </div>
           <p className={`stat-value ${balance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
@@ -175,7 +177,7 @@ export default function Dashboard() {
 
         <div className="stat-card border border-purple-500/20">
           <div className="flex items-center justify-between">
-            <span className="stat-label">Poupança · Savings</span>
+            <span className="stat-label">{t('Poupança · Savings')}</span>
             <PiggyBank size={16} className="text-purple-400" />
           </div>
           <p className="stat-value text-purple-400">{formatBRL(totalSavings)}</p>
@@ -188,7 +190,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <Target size={18} className="text-emerald-400" />
             <div>
-              <p className="text-white font-semibold text-sm">Gasto Diário · Daily Spending</p>
+              <p className="text-white font-semibold text-sm">{t('Gasto Diário · Daily Spending')}</p>
               <p className="text-gray-500 text-xs">Meta: R$ {DAILY_GOAL},00 por dia</p>
             </div>
           </div>
@@ -199,7 +201,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div className="bg-dark-600 rounded-xl p-3 text-center">
-            <p className="text-gray-400 text-xs mb-1">Hoje · Today</p>
+            <p className="text-gray-400 text-xs mb-1">{t('Hoje · Today')}</p>
             <p className={`text-xl font-bold ${todaySpend <= DAILY_GOAL ? 'text-emerald-400' : 'text-red-400'}`}>
               {formatBRL(todaySpend)}
             </p>
@@ -214,11 +216,11 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="bg-dark-600 rounded-xl p-3 text-center">
-            <p className="text-gray-400 text-xs mb-1">Média Mensal · Monthly Avg</p>
+            <p className="text-gray-400 text-xs mb-1">{t('Média Mensal · Monthly Avg')}</p>
             <p className={`text-xl font-bold ${avgDaily <= DAILY_GOAL ? 'text-emerald-400' : 'text-yellow-400'}`}>
               {formatBRL(avgDaily)}
             </p>
-            <p className="text-xs mt-1 text-gray-500">por dia / per day</p>
+            <p className="text-xs mt-1 text-gray-500">por dia{isAdmin && ' / per day'}</p>
           </div>
         </div>
 
@@ -240,7 +242,7 @@ export default function Dashboard() {
           {/* Bar chart */}
           <div className="card">
             <p className="section-title">Receitas vs Despesas</p>
-            <p className="text-gray-500 text-xs mb-3">Income vs Expenses</p>
+            {isAdmin && <p className="text-gray-500 text-xs mb-3">Income vs Expenses</p>}
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
@@ -267,7 +269,7 @@ export default function Dashboard() {
           {/* Pie chart */}
           <div className="card">
             <p className="section-title">Categorias este mês</p>
-            <p className="text-gray-500 text-xs mb-3">Expense categories</p>
+            {isAdmin && <p className="text-gray-500 text-xs mb-3">Expense categories</p>}
             {pieData.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
@@ -307,7 +309,7 @@ export default function Dashboard() {
 
       {/* Quick links */}
       <div>
-        <p className="section-title">Ações rápidas · Quick actions</p>
+        <p className="section-title">{t('Ações rápidas · Quick actions')}</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {[
             { to: '/income', emoji: '💵', label: 'Adicionar renda', sub: 'Add income' },
@@ -325,7 +327,7 @@ export default function Dashboard() {
               <span className="text-2xl">{emoji}</span>
               <div>
                 <p className="text-white text-sm font-medium leading-tight">{label}</p>
-                <p className="text-gray-500 text-xs">{sub}</p>
+                {isAdmin && <p className="text-gray-500 text-xs">{sub}</p>}
               </div>
               <ChevronRight size={14} className="text-gray-600 ml-auto" />
             </Link>

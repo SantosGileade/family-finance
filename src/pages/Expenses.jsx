@@ -3,6 +3,7 @@ import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil } from 'lucide-re
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
+import { useLang } from '../hooks/useLang'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -31,7 +32,8 @@ const SUBCATEGORIES = {
 }
 
 export default function Expenses() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
+  const t = useLang()
   const location = useLocation()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -203,7 +205,7 @@ export default function Expenses() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">Despesas 🧾</h1>
-          <p className="text-gray-500 text-sm">Expenses · Contas e gastos do mês</p>
+          <p className="text-gray-500 text-sm">{t('Expenses · Contas e gastos do mês')}</p>
         </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
@@ -231,7 +233,7 @@ export default function Expenses() {
           <p className="text-red-300/70 text-xs">
             Você tem {formatBRL(totalCard)} no cartão. Tente reduzir isso mês a mês.
             <br />
-            <span className="text-gray-500 italic">Goal: get off the credit card!</span>
+            {isAdmin && <span className="text-gray-500 italic">Goal: get off the credit card!</span>}
           </p>
           <div className="mt-2 h-1.5 rounded-full bg-dark-600">
             <div
@@ -247,24 +249,24 @@ export default function Expenses() {
 
       {/* Add button */}
       <button onClick={() => setShowModal(true)} className="btn-primary w-full">
-        <Plus size={18} /> Adicionar despesa · Add expense
+        <Plus size={18} /> {t('Adicionar despesa · Add expense')}
       </button>
 
       {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-        {TABS.map(t => (
+        {TABS.map(tabItem => (
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+            key={tabItem.key}
+            onClick={() => setTab(tabItem.key)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
-              tab === t.key
+              tab === tabItem.key
                 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
                 : 'bg-dark-700 text-gray-400 hover:text-white border border-white/5'
             }`}
           >
-            {t.emoji} {t.label.split(' · ')[0]}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === t.key ? 'bg-emerald-500/20' : 'bg-white/5'}`}>
-              {formatBRL(totalsMap[t.key])}
+            {tabItem.emoji} {t(tabItem.label)}
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === tabItem.key ? 'bg-emerald-500/20' : 'bg-white/5'}`}>
+              {formatBRL(totalsMap[tabItem.key])}
             </span>
           </button>
         ))}
@@ -280,7 +282,7 @@ export default function Expenses() {
         <div className="card text-center py-10">
           <Receipt size={40} className="text-gray-600 mx-auto mb-3" />
           <p className="text-gray-400 font-medium">Nenhuma despesa registrada</p>
-          <p className="text-gray-600 text-sm mt-1">No expenses recorded</p>
+          {isAdmin && <p className="text-gray-600 text-sm mt-1">No expenses recorded</p>}
           <button onClick={() => setShowModal(true)} className="btn-primary mx-auto mt-4">
             <Plus size={16} /> Adicionar despesa
           </button>
@@ -391,7 +393,7 @@ export default function Expenses() {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
           <div className="modal-content">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">{editingItem ? 'Editar despesa · Edit Expense' : 'Adicionar despesa · Add Expense'}</h2>
+              <h2 className="text-white font-semibold">{editingItem ? t('Editar despesa · Edit Expense') : t('Adicionar despesa · Add Expense')}</h2>
               <button onClick={closeModal} className="text-gray-500 hover:text-white">
                 <X size={20} />
               </button>
@@ -400,7 +402,7 @@ export default function Expenses() {
             <form onSubmit={handleAdd} className="space-y-4">
               {editingItem?.source !== 'daily' && (
                 <div>
-                  <label className="label">Categoria · Category</label>
+                  <label className="label">{t('Categoria · Category')}</label>
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { value: 'fixed', label: '🏠 Fixa', sub: 'Fixed' },
@@ -418,7 +420,7 @@ export default function Expenses() {
                         }`}
                       >
                         <p className="text-sm font-medium">{c.label}</p>
-                        <p className="text-xs text-gray-500">{c.sub}</p>
+                        {isAdmin && <p className="text-xs text-gray-500">{c.sub}</p>}
                       </button>
                     ))}
                   </div>
@@ -426,7 +428,7 @@ export default function Expenses() {
               )}
 
               <div>
-                <label className="label">Descrição · Description</label>
+                <label className="label">{t('Descrição · Description')}</label>
                 <input
                   list="subcats"
                   className="input-field"
@@ -443,7 +445,7 @@ export default function Expenses() {
               </div>
 
               <div>
-                <label className="label">Valor · Amount (R$)</label>
+                <label className="label">{t('Valor · Amount (R$)')}</label>
                 <CurrencyInput
                   className="input-field"
                   value={form.amount}
@@ -453,7 +455,7 @@ export default function Expenses() {
               </div>
 
               <div>
-                <label className="label">Data · Date</label>
+                <label className="label">{t('Data · Date')}</label>
                 <input
                   className="input-field"
                   type="date"

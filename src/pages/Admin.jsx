@@ -38,10 +38,12 @@ const UserRow = ({ profile, onUpdate }) => {
   const displayName = profile.email || profile.name || `${profile.id.substring(0, 8)}...`
 
   // Confirma a seleção de dias e salva
+  // Regra: plano ATIVO com data futura → soma a partir da expiração atual
+  //        plano INATIVO ou expirado  → começa do zero a partir de hoje
   const confirmActivate = async () => {
     if (!selectedDays) return
     setLoading(true)
-    const base = profile.data_expiracao && !isPast(new Date(profile.data_expiracao))
+    const base = profile.plano_ativo && profile.data_expiracao && !isPast(new Date(profile.data_expiracao))
       ? new Date(profile.data_expiracao)
       : new Date()
     const newDate = addDays(base, selectedDays)

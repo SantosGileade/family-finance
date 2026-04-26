@@ -5,6 +5,7 @@ import { getIncome, addIncome, updateIncome, deleteIncome } from '../lib/supabas
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { useLang } from '../hooks/useLang'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
@@ -19,7 +20,8 @@ const INCOME_CATEGORIES = [
 ]
 
 export default function Income() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
+  const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -105,7 +107,7 @@ export default function Income() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">Renda 💵</h1>
-          <p className="text-gray-500 text-sm">Income · Entradas de dinheiro</p>
+          <p className="text-gray-500 text-sm">{t('Income · Entradas de dinheiro')}</p>
         </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
@@ -114,7 +116,7 @@ export default function Income() {
       <div className="card border border-emerald-500/20 bg-gradient-to-br from-dark-700 to-dark-600">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm">Total do mês · Monthly total</p>
+            <p className="text-gray-400 text-sm">{t('Total do mês · Monthly total')}</p>
             <p className="text-3xl font-bold text-emerald-400 mt-1">{formatBRL(total)}</p>
             <p className="text-gray-500 text-xs mt-1">{items.length} entrada(s) registrada(s)</p>
           </div>
@@ -124,13 +126,13 @@ export default function Income() {
         </div>
 
         <button onClick={() => setShowModal(true)} className="btn-primary w-full mt-4">
-          <Plus size={18} /> Adicionar renda · Add income
+          <Plus size={18} /> {t('Adicionar renda · Add income')}
         </button>
       </div>
 
       {/* List */}
       <div>
-        <p className="section-title">Lançamentos · Records</p>
+        <p className="section-title">{t('Lançamentos · Records')}</p>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -140,7 +142,7 @@ export default function Income() {
           <div className="card text-center py-10">
             <DollarSign size={40} className="text-gray-600 mx-auto mb-3" />
             <p className="text-gray-400 font-medium">Nenhuma entrada registrada</p>
-            <p className="text-gray-600 text-sm mt-1">No income recorded for this month</p>
+            {isAdmin && <p className="text-gray-600 text-sm mt-1">No income recorded for this month</p>}
             <button onClick={() => setShowModal(true)} className="btn-primary mx-auto mt-4">
               <Plus size={16} /> Adicionar renda
             </button>
@@ -180,16 +182,16 @@ export default function Income() {
       {total > 0 && (
         <div className="card border border-blue-500/20">
           <p className="text-blue-400 font-semibold text-sm mb-3">
-            💡 Regra 50/30/20 · 50/30/20 Rule
+            💡 {t('Regra 50/30/20 · 50/30/20 Rule')}
           </p>
           <p className="text-gray-500 text-xs mb-3">
             Uma forma inteligente de dividir sua renda de <span className="text-white">{formatBRL(total)}</span>:
           </p>
           <div className="space-y-2">
             {[
-              { pct: 50, label: 'Necessidades · Needs', color: 'bg-blue-500', hint: 'Aluguel, mercado, contas' },
-              { pct: 30, label: 'Desejos · Wants', color: 'bg-yellow-500', hint: 'Lazer, roupas, restaurantes' },
-              { pct: 20, label: 'Poupança · Savings', color: 'bg-emerald-500', hint: 'Guardar para o futuro' },
+              { pct: 50, label: t('Necessidades · Needs'), color: 'bg-blue-500', hint: 'Aluguel, mercado, contas' },
+              { pct: 30, label: t('Desejos · Wants'), color: 'bg-yellow-500', hint: 'Lazer, roupas, restaurantes' },
+              { pct: 20, label: t('Poupança · Savings'), color: 'bg-emerald-500', hint: 'Guardar para o futuro' },
             ].map(({ pct, label, color, hint }) => (
               <div key={pct}>
                 <div className="flex justify-between text-sm mb-1">
@@ -220,7 +222,7 @@ export default function Income() {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal-content">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">{editingId ? 'Editar renda · Edit Income' : 'Adicionar renda · Add Income'}</h2>
+              <h2 className="text-white font-semibold">{editingId ? t('Editar renda · Edit Income') : t('Adicionar renda · Add Income')}</h2>
               <button onClick={closeModal} className="text-gray-500 hover:text-white transition-colors">
                 <X size={20} />
               </button>
@@ -228,7 +230,7 @@ export default function Income() {
 
             <form onSubmit={handleAdd} className="space-y-4">
               <div>
-                <label className="label">Descrição · Description</label>
+                <label className="label">{t('Descrição · Description')}</label>
                 <input
                   className="input-field"
                   placeholder="Ex: Salário de Abril"
@@ -239,7 +241,7 @@ export default function Income() {
               </div>
 
               <div>
-                <label className="label">Valor · Amount (R$)</label>
+                <label className="label">{t('Valor · Amount (R$)')}</label>
                 <CurrencyInput
                   className="input-field"
                   value={form.amount}
@@ -249,20 +251,20 @@ export default function Income() {
               </div>
 
               <div>
-                <label className="label">Categoria · Category</label>
+                <label className="label">{t('Categoria · Category')}</label>
                 <select
                   className="input-field"
                   value={form.category}
                   onChange={e => setForm({ ...form, category: e.target.value })}
                 >
                   {INCOME_CATEGORIES.map(c => (
-                    <option key={c.value} value={c.value}>{c.emoji} {c.label}</option>
+                    <option key={c.value} value={c.value}>{c.emoji} {t(c.label)}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="label">Data · Date</label>
+                <label className="label">{t('Data · Date')}</label>
                 <input
                   className="input-field"
                   type="date"

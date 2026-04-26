@@ -6,6 +6,7 @@ import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { format, getDaysInMonth } from 'date-fns'
+import { useLang } from '../hooks/useLang'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -18,7 +19,8 @@ const SPENDING_TAGS = [
 ]
 
 export default function DailySpending() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
+  const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -114,7 +116,7 @@ export default function DailySpending() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">Gastos Diários 📅</h1>
-          <p className="text-gray-500 text-sm">Daily Spending · Controle do dia a dia</p>
+          <p className="text-gray-500 text-sm">{t('Daily Spending · Controle do dia a dia')}</p>
         </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
@@ -122,7 +124,7 @@ export default function DailySpending() {
       {/* Goal cards */}
       <div className="grid grid-cols-2 gap-3">
         <div className={`card border ${todayTotal <= DAILY_GOAL ? 'border-emerald-500/20' : 'border-red-500/20'}`}>
-          <p className="text-gray-400 text-xs mb-1">Hoje · Today</p>
+          <p className="text-gray-400 text-xs mb-1">{t('Hoje · Today')}</p>
           <p className={`text-2xl font-bold ${todayTotal <= DAILY_GOAL ? 'text-emerald-400' : 'text-red-400'}`}>
             {formatBRL(todayTotal)}
           </p>
@@ -136,7 +138,7 @@ export default function DailySpending() {
         </div>
 
         <div className="card">
-          <p className="text-gray-400 text-xs mb-1">Total do mês · Month total</p>
+          <p className="text-gray-400 text-xs mb-1">{t('Total do mês · Month total')}</p>
           <p className="text-2xl font-bold text-white">
             {formatBRL(totalMonth)}
           </p>
@@ -151,12 +153,12 @@ export default function DailySpending() {
 
       {/* Add button */}
       <button onClick={() => openModal(todayStr)} className="btn-primary w-full">
-        <Plus size={18} /> Registrar gasto de hoje · Add today's spending
+        <Plus size={18} /> {t("Registrar gasto de hoje · Add today's spending")}
       </button>
 
       {/* Calendar */}
       <div className="card">
-        <p className="section-title mb-4">Calendário · Calendar</p>
+        <p className="section-title mb-4">{t('Calendário · Calendar')}</p>
         <div className="grid grid-cols-7 gap-1 mb-2">
           {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
             <p key={d} className="text-center text-gray-600 text-xs font-medium py-1">{d}</p>
@@ -193,9 +195,9 @@ export default function DailySpending() {
         </div>
         <div className="flex gap-4 mt-3 flex-wrap">
           {[
-            { color: 'bg-emerald-500/30 border border-emerald-500/50', label: `≤ R$${DAILY_GOAL} · On target` },
-            { color: 'bg-yellow-500/30 border border-yellow-500/50', label: 'Um pouco alto · A bit high' },
-            { color: 'bg-red-500/30 border border-red-500/50', label: 'Acima · Over budget' },
+            { color: 'bg-emerald-500/30 border border-emerald-500/50', label: t(`≤ R$${DAILY_GOAL} · On target`) },
+            { color: 'bg-yellow-500/30 border border-yellow-500/50', label: t('Um pouco alto · A bit high') },
+            { color: 'bg-red-500/30 border border-red-500/50', label: t('Acima · Over budget') },
           ].map(({ color, label }) => (
             <div key={label} className="flex items-center gap-1.5">
               <div className={`w-3 h-3 rounded ${color}`} />
@@ -209,7 +211,7 @@ export default function DailySpending() {
       {selectedDay && byDate[selectedDay] && (
         <div className="card border border-white/10">
           <p className="section-title">
-            Gastos de {selectedDay} · Spending on {selectedDay}
+            {t(`Gastos de ${selectedDay} · Spending on ${selectedDay}`)}
           </p>
           <div className="space-y-2">
             {byDate[selectedDay].map(item => (
@@ -233,7 +235,7 @@ export default function DailySpending() {
       {/* Recent */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="section-title mb-0">Últimos gastos · Recent</p>
+          <p className="section-title mb-0">{t('Últimos gastos · Recent')}</p>
           <span className="text-gray-500 text-xs">Total: {formatBRL(totalMonth)}</span>
         </div>
 
@@ -245,7 +247,7 @@ export default function DailySpending() {
           <div className="card text-center py-8">
             <Target size={36} className="text-gray-600 mx-auto mb-2" />
             <p className="text-gray-400 text-sm">Nenhum gasto registrado</p>
-            <p className="text-gray-600 text-xs mt-1">No spending recorded this month</p>
+            {isAdmin && <p className="text-gray-600 text-xs mt-1">No spending recorded this month</p>}
           </div>
         ) : (
           <div className="space-y-2">
@@ -286,7 +288,7 @@ export default function DailySpending() {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal-content">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">Registrar gasto · Add Spending</h2>
+              <h2 className="text-white font-semibold">{t('Registrar gasto · Add Spending')}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white">
                 <X size={20} />
               </button>
@@ -294,7 +296,7 @@ export default function DailySpending() {
 
             <form onSubmit={handleAdd} className="space-y-4">
               <div>
-                <label className="label">O que foi? · What was it?</label>
+                <label className="label">{t('O que foi? · What was it?')}</label>
                 <input
                   className="input-field"
                   placeholder="Ex: Lanche, Uber, Mercado..."
@@ -318,7 +320,7 @@ export default function DailySpending() {
               </div>
 
               <div>
-                <label className="label">Quanto? · Amount (R$)</label>
+                <label className="label">{t('Quanto? · Amount (R$)')}</label>
                 <CurrencyInput
                   className="input-field text-lg font-semibold"
                   value={form.amount}
@@ -334,7 +336,7 @@ export default function DailySpending() {
               </div>
 
               <div>
-                <label className="label">Data · Date</label>
+                <label className="label">{t('Data · Date')}</label>
                 <input
                   className="input-field"
                   type="date"
@@ -346,11 +348,11 @@ export default function DailySpending() {
 
               {/* Payment method toggle */}
               <div>
-                <label className="label">Como pagou? · Payment method</label>
+                <label className="label">{t('Como pagou? · Payment method')}</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { value: 'cash', emoji: '💵', label: 'Dinheiro/Débito', sub: 'Cash / Debit' },
-                    { value: 'credit_card', emoji: '💳', label: 'Cartão Crédito', sub: 'Credit Card' },
+                    { value: 'cash', emoji: '💵', label: 'Dinheiro/Débito', sub: 'Cash / Debit', showSub: isAdmin },
+                    { value: 'credit_card', emoji: '💳', label: 'Cartão Crédito', sub: 'Credit Card', showSub: isAdmin },
                   ].map(opt => (
                     <button
                       key={opt.value}
@@ -366,7 +368,7 @@ export default function DailySpending() {
                     >
                       <p className="text-xl mb-1">{opt.emoji}</p>
                       <p className="text-xs font-semibold">{opt.label}</p>
-                      <p className="text-xs text-gray-500">{opt.sub}</p>
+                      {opt.showSub && <p className="text-xs text-gray-500">{opt.sub}</p>}
                     </button>
                   ))}
                 </div>
