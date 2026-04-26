@@ -31,7 +31,11 @@ export default function Login() {
             setError('Erro ao criar conta. Verifique os dados e tente novamente.')
           }
         } else {
-          setSuccess('✅ Conta criada! Verifique seu e-mail para confirmar o cadastro.')
+          // Redireciona para login com mensagem de sucesso (sem confirmação de e-mail)
+          setEmail('')
+          setPassword('')
+          setMode('login')
+          setSuccess('✅ Conta criada com sucesso! Faça login para continuar.')
         }
       }
     } catch {
