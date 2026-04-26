@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Zap, X, Loader2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { usePlanGate } from '../contexts/PlanGateContext'
 import { addDailySpending } from '../lib/supabase'
 import { format } from 'date-fns'
 import { useLang } from '../hooks/useLang'
@@ -12,6 +13,7 @@ const centsToDisplay = (cents) =>
 
 export default function QuickAdd() {
   const { user, isAdmin } = useAuth()
+  const { check } = usePlanGate()
   const t = useLang()
   const [open, setOpen] = useState(false)
   const [cents, setCents] = useState(0)           // valor em centavos
@@ -49,6 +51,7 @@ export default function QuickAdd() {
   }
 
   const handleSave = async () => {
+    if (!check()) return
     if (cents <= 0) {
       amountRef.current?.focus()
       return

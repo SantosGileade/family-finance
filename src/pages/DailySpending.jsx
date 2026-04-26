@@ -7,6 +7,7 @@ import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { format, getDaysInMonth } from 'date-fns'
 import { useLang } from '../hooks/useLang'
+import { usePlanGate } from '../contexts/PlanGateContext'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -20,6 +21,7 @@ const SPENDING_TAGS = [
 
 export default function DailySpending() {
   const { user, isAdmin } = useAuth()
+  const { check } = usePlanGate()
   const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -50,6 +52,7 @@ export default function DailySpending() {
 
   const handleAdd = async (e) => {
     e.preventDefault()
+    if (!check()) return
     setSaving(true)
     await addDailySpending({
       user_id: user.id,
@@ -66,6 +69,7 @@ export default function DailySpending() {
   }
 
   const handleDelete = async (id) => {
+    if (!check()) return
     await deleteDailySpending(id)
     setItems(items.filter(i => i.id !== id))
     setConfirmId(null)
@@ -152,7 +156,7 @@ export default function DailySpending() {
       </div>
 
       {/* Add button */}
-      <button onClick={() => openModal(todayStr)} className="btn-primary w-full">
+      <button onClick={() => { if (!check()) return; openModal(todayStr) }} className="btn-primary w-full">
         <Plus size={18} /> {t("Registrar gasto de hoje · Add today's spending")}
       </button>
 

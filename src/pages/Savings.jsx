@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Minus, Trash2, PiggyBank, Loader2, X, Trophy, Star } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { usePlanGate } from '../contexts/PlanGateContext'
 import { getSavings, addSaving, deleteSaving } from '../lib/supabase'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -28,6 +29,7 @@ const SAVING_TIPS = [
 
 export default function Savings() {
   const { user } = useAuth()
+  const { check } = usePlanGate()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -61,6 +63,7 @@ export default function Savings() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!check()) return
     setSaving(true)
     const prevTotal = total
     const amount = modalType === 'withdraw' ? -parseCurrency(form.amount) : parseCurrency(form.amount)
@@ -85,6 +88,7 @@ export default function Savings() {
   }
 
   const handleDelete = async (id) => {
+    if (!check()) return
     await deleteSaving(id)
     setItems(items.filter(i => i.id !== id))
     setConfirmId(null)
@@ -215,6 +219,7 @@ export default function Savings() {
             <button
               key={v}
               onClick={async () => {
+                if (!check()) return
                 const prevTotal = total
                 setSaving(true)
                 await addSaving({

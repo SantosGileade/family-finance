@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
+import { usePlanGate } from '../contexts/PlanGateContext'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -33,6 +34,7 @@ const SUBCATEGORIES = {
 
 export default function Expenses() {
   const { user, isAdmin } = useAuth()
+  const { check } = usePlanGate()
   const t = useLang()
   const location = useLocation()
   const now = new Date()
@@ -99,6 +101,7 @@ export default function Expenses() {
 
   const handleAdd = async (e) => {
     e.preventDefault()
+    if (!check()) return
     setSaving(true)
     const d = new Date(form.date + 'T12:00:00')
     const enteredMonth = d.getMonth() + 1
@@ -174,6 +177,7 @@ export default function Expenses() {
   }
 
   const handleDelete = async () => {
+    if (!check()) return
     if (!confirmId) return
     if (confirmId.source === 'expense') {
       await deleteExpense(confirmId.id)
@@ -248,7 +252,7 @@ export default function Expenses() {
       )}
 
       {/* Add button */}
-      <button onClick={() => setShowModal(true)} className="btn-primary w-full">
+      <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary w-full">
         <Plus size={18} /> {t('Adicionar despesa · Add expense')}
       </button>
 
@@ -283,7 +287,7 @@ export default function Expenses() {
           <Receipt size={40} className="text-gray-600 mx-auto mb-3" />
           <p className="text-gray-400 font-medium">Nenhuma despesa registrada</p>
           {isAdmin && <p className="text-gray-600 text-sm mt-1">No expenses recorded</p>}
-          <button onClick={() => setShowModal(true)} className="btn-primary mx-auto mt-4">
+          <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary mx-auto mt-4">
             <Plus size={16} /> Adicionar despesa
           </button>
         </div>

@@ -7,6 +7,7 @@ import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useLang } from '../hooks/useLang'
 import { format } from 'date-fns'
+import { usePlanGate } from '../contexts/PlanGateContext'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -21,6 +22,7 @@ const INCOME_CATEGORIES = [
 
 export default function Income() {
   const { user, isAdmin } = useAuth()
+  const { check } = usePlanGate()
   const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -68,6 +70,7 @@ export default function Income() {
 
   const handleAdd = async (e) => {
     e.preventDefault()
+    if (!check()) return
     setSaving(true)
     const d = new Date(form.date + 'T12:00:00')
     const payload = {
@@ -90,6 +93,7 @@ export default function Income() {
   }
 
   const handleDelete = async (id) => {
+    if (!check()) return
     await deleteIncome(id)
     setItems(items.filter(i => i.id !== id))
     setConfirmId(null)
@@ -125,7 +129,7 @@ export default function Income() {
           </div>
         </div>
 
-        <button onClick={() => setShowModal(true)} className="btn-primary w-full mt-4">
+        <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary w-full mt-4">
           <Plus size={18} /> {t('Adicionar renda · Add income')}
         </button>
       </div>
@@ -143,7 +147,7 @@ export default function Income() {
             <DollarSign size={40} className="text-gray-600 mx-auto mb-3" />
             <p className="text-gray-400 font-medium">Nenhuma entrada registrada</p>
             {isAdmin && <p className="text-gray-600 text-sm mt-1">No income recorded for this month</p>}
-            <button onClick={() => setShowModal(true)} className="btn-primary mx-auto mt-4">
+            <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary mx-auto mt-4">
               <Plus size={16} /> Adicionar renda
             </button>
           </div>
