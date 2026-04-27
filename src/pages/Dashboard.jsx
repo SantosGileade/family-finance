@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import {
   TrendingUp, TrendingDown, Wallet, PiggyBank,
-  Calendar, CreditCard, ChevronRight, Target, AlertCircle
+  Calendar, CreditCard, ChevronRight, Target, AlertCircle, LogOut
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getIncome, getExpenses, getDailySpending, getSavings, getMonthlyTotals } from '../lib/supabase'
@@ -39,7 +39,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function Dashboard() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, signOut } = useAuth()
   const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -343,6 +343,18 @@ export default function Dashboard() {
             </Link>
           ))}
         </div>
+      </div>
+
+      {/* Sair */}
+      <div className="flex justify-center pt-2 pb-4">
+        <button
+          onClick={signOut}
+          className="flex items-center gap-2 text-gray-600 hover:text-red-400
+                     text-sm px-4 py-2 rounded-xl hover:bg-red-500/10 transition-all"
+        >
+          <LogOut size={15} />
+          Sair da conta
+        </button>
       </div>
     </div>
   )
