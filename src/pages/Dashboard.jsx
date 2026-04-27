@@ -183,6 +183,7 @@ export default function Dashboard() {
           <p className={`stat-value ${balance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
             {formatBRL(balance)}
           </p>
+          <p className="text-gray-600 text-xs mt-0.5">Renda − despesas</p>
         </div>
 
         <div className="stat-card border border-purple-500/20">

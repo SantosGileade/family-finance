@@ -86,7 +86,7 @@ export default function Expenses() {
     setEditingItem({ id: item.id, source })
     setForm({
       description: item.description,
-      amount: String(Math.round(Number(item.amount) * 100)),
+      amount: Number(item.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
       category: item.category || 'credit_card',
       date: item.date,
     })
@@ -305,6 +305,12 @@ export default function Expenses() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-white font-medium text-sm truncate">{item.description}</p>
                     {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
+                    {item.category === 'variable' && !item.is_recurring && (
+                      <span className="text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded-full">🛒 Variável</span>
+                    )}
+                    {item.category === 'credit_card' && (
+                      <span className="text-xs bg-red-500/15 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded-full">💳 Cartão</span>
+                    )}
                   </div>
                   <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
                 </div>

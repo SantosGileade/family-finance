@@ -55,7 +55,7 @@ export default function Income() {
     setEditingId(item.id)
     setForm({
       description: item.description,
-      amount: String(Math.round(Number(item.amount) * 100)),
+      amount: Number(item.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
       category: item.category,
       date: item.date,
     })

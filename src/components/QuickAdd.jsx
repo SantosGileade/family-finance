@@ -5,11 +5,7 @@ import { usePlanGate } from '../contexts/PlanGateContext'
 import { addDailySpending } from '../lib/supabase'
 import { format } from 'date-fns'
 import { useLang } from '../hooks/useLang'
-
-// Máscara estilo bancário: armazena centavos como inteiro
-// 0 → "0,00" | 1234 → "12,34" | 100000 → "1.000,00"
-const centsToDisplay = (cents) =>
-  (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+import CurrencyInput, { parseCurrency } from './CurrencyInput'
 
 const QUICK_CATS = [
   { emoji: '🍔', label: 'Lanche' },
@@ -31,9 +27,9 @@ export default function QuickAdd() {
   const { check } = usePlanGate()
   const t = useLang()
   const [open, setOpen] = useState(false)
-  const [cents, setCents] = useState(0)
-  const [selectedCat, setSelectedCat] = useState(null)   // categoria selecionada
-  const [customDesc, setCustomDesc] = useState('')        // descrição manual (só se "Outro")
+  const [amount, setAmount] = useState('')
+  const [selectedCat, setSelectedCat] = useState(null)
+  const [customDesc, setCustomDesc] = useState('')
   const [method, setMethod] = useState('debit')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -46,7 +42,7 @@ export default function QuickAdd() {
   }, [open])
 
   const handleOpen = () => {
-    setCents(0)
+    setAmount('')
     setSelectedCat(null)
     setCustomDesc('')
     setMethod('debit')
@@ -69,7 +65,8 @@ export default function QuickAdd() {
 
   const handleSave = async () => {
     if (!check()) return
-    if (cents <= 0) {
+    const val = parseCurrency(amount)
+    if (!val || val <= 0) {
       amountRef.current?.focus()
       return
     }
@@ -83,7 +80,7 @@ export default function QuickAdd() {
     await addDailySpending({
       user_id: user.id,
       description: finalDesc,
-      amount: cents / 100,
+      amount: val,
       payment_method: method === 'credit_card' ? 'credit_card' : 'debit',
       date: format(new Date(), 'yyyy-MM-dd'),
     })
@@ -155,31 +152,18 @@ export default function QuickAdd() {
               </button>
             </div>
 
-            {/* Valor com máscara */}
+            {/* Valor */}
             <div className="mb-4">
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold"
                       style={{ fontSize: 18 }}>
                   R$
                 </span>
-                <input
-                  ref={amountRef}
-                  type="text"
-                  inputMode="numeric"
-                  value={centsToDisplay(cents)}
-                  onChange={handleAmountInput}
-                  onKeyDown={handleAmountKeyDown}
-                  // Sempre força cursor no final — evita inserção no meio do número
-                  onFocus={(e) => {
-                    const len = e.target.value.length
-                    e.target.setSelectionRange(len, len)
-                  }}
-                  onClick={(e) => {
-                    const len = e.target.value.length
-                    e.target.setSelectionRange(len, len)
-                  }}
-                  // font-size >= 16px evita zoom automático do iOS
-                  style={{ fontSize: 26 }}
+                <CurrencyInput
+                  value={amount}
+                  onChange={setAmount}
+                  placeholder="0,00"
+                  autoFocus
                   className="w-full bg-dark-600 border border-white/10 rounded-2xl
                              pl-14 pr-4 py-4 text-white font-bold
                              focus:outline-none focus:border-emerald-500/50
