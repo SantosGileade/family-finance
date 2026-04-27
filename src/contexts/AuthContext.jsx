@@ -9,7 +9,7 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // loadProfile com timeout de 6s — evita travar quando rede está lenta (ex: tab voltando do sleep)
+  // loadProfile com timeout de 3s — evita travar quando rede está lenta (ex: tab voltando do sleep)
   const loadProfile = async (authUser) => {
     if (!authUser) {
       setProfile(null)
@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const result = await Promise.race([
         getProfile(authUser.id),
-        new Promise(resolve => setTimeout(() => resolve({ data: null }), 6000))
+        new Promise(resolve => setTimeout(() => resolve({ data: null }), 3000))
       ])
       if (result?.data) setProfile(result.data)
       return result?.data ?? null
@@ -35,8 +35,8 @@ export const AuthProvider = ({ children }) => {
   }
 
   useEffect(() => {
-    // Safety net: se depois de 10s loading ainda estiver true, força false
-    const safetyTimer = setTimeout(() => setLoading(false), 10000)
+    // Safety net: se depois de 5s loading ainda estiver true, força false
+    const safetyTimer = setTimeout(() => setLoading(false), 5000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       clearTimeout(safetyTimer)

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Target, Loader2, X, TrendingDown } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getDailySpending, addDailySpending, deleteDailySpending } from '../lib/supabase'
+import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses } from '../lib/supabase'
 import MonthSelector from '../components/MonthSelector'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -12,7 +12,7 @@ import { usePlanGate } from '../contexts/PlanGateContext'
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-const DAILY_GOAL = 30
+// dailyGoal é calculado dinamicamente por usuário (ver state abaixo)
 
 const SPENDING_TAGS = [
   '🍔 Lanche', '🛒 Mercado', '🚌 Transporte', '☕ Café',
@@ -28,6 +28,7 @@ export default function DailySpending() {
   const [year, setYear] = useState(now.getFullYear())
 
   const [items, setItems] = useState([])
+  const [dailyGoal, setDailyGoal] = useState(30)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -43,8 +44,22 @@ export default function DailySpending() {
 
   const load = async () => {
     setLoading(true)
-    const { data } = await getDailySpending(user.id, month, year)
-    setItems(data || [])
+    const [dailyRes, incomeRes, expRes] = await Promise.all([
+      getDailySpending(user.id, month, year),
+      getIncome(user.id, month, year),
+      getExpenses(user.id, month, year),
+    ])
+    setItems(dailyRes.data || [])
+
+    // Calcula meta diária: (renda - despesas fixas) / dias do mês
+    const totalInc = (incomeRes.data || []).reduce((s, i) => s + Number(i.amount), 0)
+    const totalFixed = (expRes.data || [])
+      .filter(e => e.category === 'fixed')
+      .reduce((s, e) => s + Number(e.amount), 0)
+    const available = totalInc - totalFixed
+    const daysInMes = new Date(year, month, 0).getDate()
+    setDailyGoal(available > 0 ? Math.max(10, Math.round(available / daysInMes)) : 30)
+
     setLoading(false)
   }
 
@@ -109,8 +124,8 @@ export default function DailySpending() {
   const getDayColor = (dateStr) => {
     const t = dayTotal(dateStr)
     if (t === 0) return 'bg-dark-600 text-gray-600'
-    if (t <= DAILY_GOAL) return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-    if (t <= DAILY_GOAL * 1.5) return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+    if (t <= dailyGoal) return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+    if (t <= dailyGoal * 1.5) return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
     return 'bg-red-500/20 text-red-400 border border-red-500/30'
   }
 
@@ -127,18 +142,18 @@ export default function DailySpending() {
 
       {/* Goal cards */}
       <div className="grid grid-cols-2 gap-3">
-        <div className={`card border ${todayTotal <= DAILY_GOAL ? 'border-emerald-500/20' : 'border-red-500/20'}`}>
+        <div className={`card border ${todayTotal <= dailyGoal ? 'border-emerald-500/20' : 'border-red-500/20'}`}>
           <p className="text-gray-400 text-xs mb-1">{t('Hoje · Today')}</p>
-          <p className={`text-2xl font-bold ${todayTotal <= DAILY_GOAL ? 'text-emerald-400' : 'text-red-400'}`}>
+          <p className={`text-2xl font-bold ${todayTotal <= dailyGoal ? 'text-emerald-400' : 'text-red-400'}`}>
             {formatBRL(todayTotal)}
           </p>
           <div className="progress-bar mt-2">
             <div
-              className={`progress-fill ${todayTotal <= DAILY_GOAL ? 'bg-emerald-500' : 'bg-red-500'}`}
-              style={{ width: `${Math.min((todayTotal / DAILY_GOAL) * 100, 100)}%` }}
+              className={`progress-fill ${todayTotal <= dailyGoal ? 'bg-emerald-500' : 'bg-red-500'}`}
+              style={{ width: `${Math.min((todayTotal / dailyGoal) * 100, 100)}%` }}
             />
           </div>
-          <p className="text-gray-500 text-xs mt-1">Meta: {formatBRL(DAILY_GOAL)}</p>
+          <p className="text-gray-500 text-xs mt-1">Meta: {formatBRL(dailyGoal)}</p>
         </div>
 
         <div className="card">
@@ -199,7 +214,7 @@ export default function DailySpending() {
         </div>
         <div className="flex gap-4 mt-3 flex-wrap">
           {[
-            { color: 'bg-emerald-500/30 border border-emerald-500/50', label: t(`≤ R$${DAILY_GOAL} · On target`) },
+            { color: 'bg-emerald-500/30 border border-emerald-500/50', label: t(`≤ R$${dailyGoal} · On target`) },
             { color: 'bg-yellow-500/30 border border-yellow-500/50', label: t('Um pouco alto · A bit high') },
             { color: 'bg-red-500/30 border border-red-500/50', label: t('Acima · Over budget') },
           ].map(({ color, label }) => (
@@ -332,9 +347,9 @@ export default function DailySpending() {
                   required
                   autoFocus
                 />
-                {form.amount && parseCurrency(form.amount) > DAILY_GOAL && (
+                {form.amount && parseCurrency(form.amount) > dailyGoal && (
                   <p className="text-yellow-400 text-xs mt-1">
-                    ⚠️ Esse gasto sozinho já supera a meta diária de R$ {DAILY_GOAL}!
+                    ⚠️ Esse gasto sozinho já supera a meta diária de R$ {dailyGoal}!
                   </p>
                 )}
               </div>

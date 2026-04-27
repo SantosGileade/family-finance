@@ -87,7 +87,14 @@ export default function Dashboard() {
   const todaySpend = daily
     .filter(d => d.date === todayStr)
     .reduce((s, d) => s + Number(d.amount), 0)
-  const DAILY_GOAL = 30
+
+  // Meta diária proporcional: (renda - despesas fixas) / dias do mês
+  const totalFixed = expenses.filter(e => e.category === 'fixed').reduce((s, e) => s + Number(e.amount), 0)
+  const availableForDaily = totalIncome - totalFixed
+  const daysInCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const DAILY_GOAL = availableForDaily > 0
+    ? Math.max(10, Math.round(availableForDaily / daysInCurrentMonth))
+    : 30
 
   // This month daily average
   const daysWithSpend = [...new Set(daily.map(d => d.date))].length
@@ -103,8 +110,11 @@ export default function Dashboard() {
   })
   const pieData = Object.entries(categoryMap).map(([name, value]) => ({ name, value }))
 
-  // Chart data - last 6 months
-  const chartData = monthlyTotals.filter(m => m.income > 0 || m.expenses > 0).slice(-6)
+  // Chart data - últimos 6 meses até o mês atual (inclui meses com zero)
+  const currentMonth = now.getMonth() + 1
+  const chartData = Array.isArray(monthlyTotals)
+    ? monthlyTotals.filter(m => m.month <= currentMonth).slice(-6)
+    : []
 
   const creditCardPercent = totalIncome > 0 ? (creditCard / totalIncome) * 100 : 0
 
@@ -237,7 +247,7 @@ export default function Dashboard() {
       </div>
 
       {/* Charts */}
-      {chartData.length > 0 && (
+      {(
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Bar chart */}
           <div className="card">
@@ -257,7 +267,7 @@ export default function Dashboard() {
                   tick={{ fill: '#6b7280', fontSize: 10 }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`}
+                  tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v > 0 ? `${v}` : '0'}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="income" name="Renda" fill="#10b981" radius={[4, 4, 0, 0]} />

@@ -11,13 +11,29 @@ import { useLang } from '../hooks/useLang'
 const centsToDisplay = (cents) =>
   (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+const QUICK_CATS = [
+  { emoji: '🍔', label: 'Lanche' },
+  { emoji: '🛒', label: 'Mercado' },
+  { emoji: '🚌', label: 'Transporte' },
+  { emoji: '☕', label: 'Café' },
+  { emoji: '💊', label: 'Farmácia' },
+  { emoji: '🎮', label: 'Lazer' },
+  { emoji: '👕', label: 'Roupa' },
+  { emoji: '⛽', label: 'Combustível' },
+  { emoji: '🍕', label: 'Delivery' },
+  { emoji: '💈', label: 'Barbearia' },
+  { emoji: '🎁', label: 'Presente' },
+  { emoji: '✏️', label: 'Outro' },
+]
+
 export default function QuickAdd() {
   const { user, isAdmin } = useAuth()
   const { check } = usePlanGate()
   const t = useLang()
   const [open, setOpen] = useState(false)
-  const [cents, setCents] = useState(0)           // valor em centavos
-  const [description, setDescription] = useState('')
+  const [cents, setCents] = useState(0)
+  const [selectedCat, setSelectedCat] = useState(null)   // categoria selecionada
+  const [customDesc, setCustomDesc] = useState('')        // descrição manual (só se "Outro")
   const [method, setMethod] = useState('debit')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -31,7 +47,8 @@ export default function QuickAdd() {
 
   const handleOpen = () => {
     setCents(0)
-    setDescription('')
+    setSelectedCat(null)
+    setCustomDesc('')
     setMethod('debit')
     setSaved(false)
     setOpen(true)
@@ -57,9 +74,15 @@ export default function QuickAdd() {
       return
     }
     setSaving(true)
+    const finalDesc = selectedCat
+      ? (selectedCat.label === 'Outro' && customDesc.trim()
+          ? customDesc.trim()
+          : `${selectedCat.emoji} ${selectedCat.label}`)
+      : (customDesc.trim() || 'Gasto rápido')
+
     await addDailySpending({
       user_id: user.id,
-      description: description.trim() || 'Gasto rápido',
+      description: finalDesc,
       amount: cents / 100,
       payment_method: method === 'credit_card' ? 'credit_card' : 'debit',
       date: format(new Date(), 'yyyy-MM-dd'),
@@ -165,21 +188,43 @@ export default function QuickAdd() {
               </div>
             </div>
 
-            {/* Descrição — font-size 16px evita zoom iOS */}
+            {/* Grade de categorias */}
             <div className="mb-4">
-              <input
-                id="qa-desc"
-                type="text"
-                placeholder="O que foi? (opcional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                style={{ fontSize: 16 }}
-                className="w-full bg-dark-600 border border-white/10 rounded-xl
-                           px-4 py-3 text-white placeholder-gray-600
-                           focus:outline-none focus:border-emerald-500/50
-                           focus:ring-2 focus:ring-emerald-500/20 transition-all"
-              />
+              <p className="text-gray-500 text-xs mb-2">O que foi?</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {QUICK_CATS.map(cat => (
+                  <button
+                    key={cat.label}
+                    type="button"
+                    onClick={() => setSelectedCat(prev => prev?.label === cat.label ? null : cat)}
+                    className={`flex flex-col items-center gap-1 py-2 px-1 rounded-xl border text-center transition-all active:scale-95 ${
+                      selectedCat?.label === cat.label
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                        : 'bg-dark-600 border-white/8 text-gray-400 hover:border-white/20'
+                    }`}
+                  >
+                    <span className="text-lg leading-none">{cat.emoji}</span>
+                    <span className="text-[10px] leading-tight">{cat.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Campo de texto só aparece se "Outro" selecionado ou nenhuma categoria */}
+              {(!selectedCat || selectedCat.label === 'Outro') && (
+                <input
+                  id="qa-desc"
+                  type="text"
+                  placeholder={selectedCat?.label === 'Outro' ? 'Descreva o gasto...' : 'Ou descreva aqui (opcional)'}
+                  value={customDesc}
+                  onChange={(e) => setCustomDesc(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                  style={{ fontSize: 16 }}
+                  className="w-full bg-dark-600 border border-white/10 rounded-xl
+                             px-4 py-3 text-white placeholder-gray-600 mt-2
+                             focus:outline-none focus:border-emerald-500/50
+                             focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                />
+              )}
             </div>
 
             {/* Toggle pagamento */}
