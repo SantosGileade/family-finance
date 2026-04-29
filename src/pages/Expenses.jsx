@@ -86,7 +86,7 @@ export default function Expenses() {
     setEditingItem({ id: item.id, source })
     setForm({
       description: item.description,
-      amount: Number(item.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+      amount: String(Math.round(Number(item.amount) * 100)),
       category: item.category || 'credit_card',
       date: item.date,
     })

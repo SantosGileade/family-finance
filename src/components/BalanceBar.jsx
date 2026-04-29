@@ -124,7 +124,7 @@ export default function BalanceBar() {
           {/* Limite do cartão disponível */}
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => { setLimitInput(Number(cardLimit).toLocaleString('pt-BR', { minimumFractionDigits: 2 })); setShowLimitModal(true) }}
+              onClick={() => { setLimitInput(String(Math.round(cardLimit * 100))); setShowLimitModal(true) }}
               title="Configurar limite do cartão"
               className="text-gray-600 hover:text-gray-400 transition-colors"
             >

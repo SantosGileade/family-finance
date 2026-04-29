@@ -65,7 +65,7 @@ export default function QuickAdd() {
 
   const handleSave = async () => {
     if (!check()) return
-    const val = parseCurrency(amount)
+    const val = parseCurrency(amount)  // parseCurrency("1500") = 15.00
     if (!val || val <= 0) {
       amountRef.current?.focus()
       return

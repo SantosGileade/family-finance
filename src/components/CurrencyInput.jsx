@@ -1,35 +1,25 @@
 /**
- * Campo de valor monetário com formatação automática:
- * - Enquanto digita: mostra o que o usuário digitou ("1500")
- * - Ao sair do campo (blur): formata para "1.500,00"
- * - Ao entrar no campo (focus): seleciona tudo para facilitar edição
+ * Máscara de valor monetário — padrão app bancário brasileiro:
  *
- * Exemplos:
- *   digitar "1500"     → blur → "1.500,00"
- *   digitar "15,5"     → blur → "15,50"
- *   digitar "1500,50"  → blur → "1.500,50"
+ *   Digite "1"      → "0,01"
+ *   Digite "15"     → "0,15"
+ *   Digite "150"    → "1,50"
+ *   Digite "1500"   → "15,00"   ← quinze reais
+ *   Digite "15000"  → "150,00"
+ *   Digite "150000" → "1.500,00"
+ *
+ * O valor no estado é sempre a string de dígitos (ex: "1500").
+ * Use parseCurrency("1500") → 15.00 para salvar no banco.
  */
 
-/**
- * Converte string digitada pelo usuário em número float.
- * "1500"      → 1500.00
- * "1.500,00"  → 1500.00
- * "15,50"     → 15.50
- * "15.50"     → 15.50
- */
-export const parseCurrency = (str) => {
-  if (!str) return 0
-  const s = String(str).trim()
-  // Tem ponto E vírgula → ponto=milhar, vírgula=decimal
-  if (s.includes('.') && s.includes(',')) {
-    return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0
-  }
-  // Só vírgula → decimal brasileiro (ex: "15,50")
-  if (s.includes(',')) {
-    return parseFloat(s.replace(',', '.')) || 0
-  }
-  // Só dígitos ou ponto decimal (ex: "1500" ou "15.50")
-  return parseFloat(s) || 0
+const formatMask = (digits) => {
+  if (!digits || digits === '0') return ''
+  const num = parseInt(digits, 10)
+  if (isNaN(num) || num === 0) return ''
+  return (num / 100).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 export default function CurrencyInput({
@@ -41,39 +31,41 @@ export default function CurrencyInput({
   autoFocus = false,
 }) {
   const handleChange = (e) => {
-    // Permite apenas dígitos, vírgula e ponto enquanto digita
-    const raw = e.target.value.replace(/[^\d.,]/g, '')
-    onChange(raw)
-  }
-
-  const handleBlur = () => {
-    // Ao sair do campo, formata para "1.500,00"
-    const val = parseCurrency(value)
-    if (val > 0) {
-      onChange(
-        val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      )
-    }
-  }
-
-  const handleFocus = (e) => {
-    // Ao entrar, seleciona tudo para facilitar redigitar
-    e.target.select()
+    // Mantém apenas dígitos, sem zeros à esquerda
+    const digits = e.target.value.replace(/\D/g, '').replace(/^0+/, '')
+    onChange(digits)
   }
 
   return (
     <input
       type="text"
-      inputMode="decimal"
-      value={value}
+      inputMode="numeric"
+      value={formatMask(value)}
       onChange={handleChange}
-      onBlur={handleBlur}
-      onFocus={handleFocus}
       placeholder={placeholder}
       className={className}
       required={required}
       autoFocus={autoFocus}
-      style={{ fontSize: 16 }} // evita zoom automático no iOS
+      style={{ fontSize: 16 }} // evita zoom no iOS
     />
   )
+}
+
+/**
+ * Converte dígitos brutos ("1500") ou string formatada para número.
+ * "1500"      → 15.00
+ * "150000"    → 1500.00
+ * "1.500,00"  → 1500.00   (string formatada de volta ao número)
+ */
+export const parseCurrency = (str) => {
+  if (!str) return 0
+  const s = String(str).trim()
+  // Se já estiver formatado ("1.500,00"), converte normalmente
+  if (s.includes(',')) {
+    return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0
+  }
+  // Dígitos brutos → divide por 100
+  const digits = s.replace(/\D/g, '')
+  if (!digits) return 0
+  return parseInt(digits, 10) / 100
 }
