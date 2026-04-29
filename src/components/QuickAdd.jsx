@@ -6,24 +6,12 @@ import { addDailySpending } from '../lib/supabase'
 import { format } from 'date-fns'
 import { useLang } from '../hooks/useLang'
 import CurrencyInput, { parseCurrency } from './CurrencyInput'
+import { getUserCategories } from '../lib/supabase'
+import { DEFAULT_CATEGORIES } from '../data/defaultCategories'
 
-const QUICK_CATS = [
-  { emoji: '🍔', label: 'Lanche' },
-  { emoji: '🛒', label: 'Mercado' },
-  { emoji: '🚌', label: 'Transporte' },
-  { emoji: '☕', label: 'Café' },
-  { emoji: '💊', label: 'Farmácia' },
-  { emoji: '🎮', label: 'Lazer' },
-  { emoji: '👕', label: 'Roupa' },
-  { emoji: '⛽', label: 'Combustível' },
-  { emoji: '🍕', label: 'Delivery' },
-  { emoji: '💈', label: 'Barbearia' },
-  { emoji: '🎁', label: 'Presente' },
-  { emoji: '✏️', label: 'Outro' },
-]
 
 export default function QuickAdd() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, profile } = useAuth()
   const { check } = usePlanGate()
   const t = useLang()
   const [open, setOpen] = useState(false)
@@ -31,15 +19,22 @@ export default function QuickAdd() {
   const [selectedCat, setSelectedCat] = useState(null)
   const [customDesc, setCustomDesc] = useState('')
   const [method, setMethod] = useState('debit')
+  const [allCategories, setAllCategories] = useState(DEFAULT_CATEGORIES)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const amountRef = useRef(null)
 
+  // Carrega categorias ao abrir: padrão (filtrando ocultas) + personalizadas
   useEffect(() => {
-    if (open) {
-      setTimeout(() => amountRef.current?.focus(), 120)
-    }
-  }, [open])
+    if (!open || !user) return
+    const hidden = profile?.hidden_categories || []
+    const visibleDefaults = DEFAULT_CATEGORIES.filter(c => !hidden.includes(c.label))
+
+    getUserCategories(user.id).then(({ data }) => {
+      const custom = (data || []).map(c => ({ emoji: c.emoji, label: c.name, id: c.id }))
+      setAllCategories([...visibleDefaults, ...custom])
+    })
+  }, [open, user, profile])
 
   const handleOpen = () => {
     setAmount('')
@@ -176,7 +171,7 @@ export default function QuickAdd() {
             <div className="mb-4">
               <p className="text-gray-500 text-xs mb-2">O que foi?</p>
               <div className="grid grid-cols-4 gap-1.5">
-                {QUICK_CATS.map(cat => (
+                {allCategories.map(cat => (
                   <button
                     key={cat.label}
                     type="button"

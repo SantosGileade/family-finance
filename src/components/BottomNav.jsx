@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, CreditCard, Calendar,
-  MoreHorizontal, PiggyBank, FileUp, Settings,
-  LogOut, X, ChevronRight, Tag
+  MoreHorizontal, PiggyBank, FileUp,
+  LogOut, X, ChevronRight, Tag, Lightbulb
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -15,9 +15,10 @@ const mainItems = [
 ]
 
 const sheetItems = [
-  { to: '/savings', icon: PiggyBank, label: 'Poupança',       sub: 'Seu cofrinho digital'    },
-  { to: '/import',  icon: FileUp,    label: 'Importar dados', sub: 'Importar extrato CSV'    },
-  { to: '/tips',    icon: Tag,       label: 'Dicas',          sub: 'Dicas financeiras'       },
+  { to: '/savings',    icon: PiggyBank, label: 'Poupança',            sub: 'Seu cofrinho digital'     },
+  { to: '/categories', icon: Tag,       label: 'Categorias',          sub: 'Gerenciar categorias'     },
+  { to: '/import',     icon: FileUp,    label: 'Importar dados',      sub: 'Importar extrato CSV'     },
+  { to: '/tips',       icon: Lightbulb, label: 'Dicas',               sub: 'Dicas e vocabulário'      },
 ]
 
 export default function BottomNav() {

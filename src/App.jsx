@@ -10,6 +10,7 @@ import DailySpending from './pages/DailySpending'
 import Savings from './pages/Savings'
 import Tips from './pages/Tips'
 import Import from './pages/Import'
+import Categories from './pages/Categories'
 import Admin from './pages/Admin'
 
 const Spinner = () => (
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="savings" element={<Savings />} />
         <Route path="tips" element={<Tips />} />
         <Route path="import" element={<Import />} />
+        <Route path="categories" element={<Categories />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -138,6 +138,51 @@ export const upsertProfile = async (profile) => {
   return { data, error }
 }
 
+export const updateHiddenCategories = async (userId, hiddenLabels) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ hidden_categories: hiddenLabels })
+    .eq('id', userId)
+    .select()
+  return { data, error }
+}
+
+// ─── USER CATEGORIES ─────────────────────────────────────────────────────────
+
+export const getUserCategories = async (userId) => {
+  const { data, error } = await supabase
+    .from('user_categories')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+  return { data, error }
+}
+
+export const addUserCategory = async (category) => {
+  const { data, error } = await supabase
+    .from('user_categories')
+    .insert([category])
+    .select()
+  return { data, error }
+}
+
+export const updateUserCategory = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('user_categories')
+    .update(updates)
+    .eq('id', id)
+    .select()
+  return { data, error }
+}
+
+export const deleteUserCategory = async (id) => {
+  const { error } = await supabase
+    .from('user_categories')
+    .delete()
+    .eq('id', id)
+  return { error }
+}
+
 // ─── ADMIN ────────────────────────────────────────────────────────────────────
 
 export const getAllProfiles = async () => {
