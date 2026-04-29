@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, CreditCard, Calendar,
-  MoreHorizontal, PiggyBank, FileUp,
+  MoreHorizontal, PiggyBank, FileUp, BarChart2,
   LogOut, X, ChevronRight, Tag, Lightbulb
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -15,6 +15,7 @@ const mainItems = [
 ]
 
 const sheetItems = [
+  { to: '/reports',    icon: BarChart2, label: 'Relatórios',          sub: 'Análise de gastos'        },
   { to: '/savings',    icon: PiggyBank, label: 'Poupança',            sub: 'Seu cofrinho digital'     },
   { to: '/categories', icon: Tag,       label: 'Categorias',          sub: 'Gerenciar categorias'     },
   { to: '/import',     icon: FileUp,    label: 'Importar dados',      sub: 'Importar extrato CSV'     },
