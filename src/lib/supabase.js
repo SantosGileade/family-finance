@@ -147,6 +147,25 @@ export const updateHiddenCategories = async (userId, hiddenLabels) => {
   return { data, error }
 }
 
+// ─── CATEGORY LIMITS ─────────────────────────────────────────────────────────
+
+export const getCategoryLimits = async (userId) => {
+  const { data, error } = await supabase
+    .from('user_category_limits')
+    .select('*')
+    .eq('user_id', userId)
+  return { data, error }
+}
+
+export const upsertCategoryLimit = async (userId, categoryLabel, limitType, limitValue) => {
+  const { data, error } = await supabase
+    .from('user_category_limits')
+    .upsert([{ user_id: userId, category_label: categoryLabel, limit_type: limitType, limit_value: limitValue }],
+            { onConflict: 'user_id,category_label' })
+    .select()
+  return { data, error }
+}
+
 // ─── USER CATEGORIES ─────────────────────────────────────────────────────────
 
 export const getUserCategories = async (userId) => {

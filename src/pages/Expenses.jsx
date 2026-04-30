@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
 import { usePlanGate } from '../contexts/PlanGateContext'
-import MonthSelector from '../components/MonthSelector'
+import MonthPicker from '../components/MonthPicker'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { format } from 'date-fns'
@@ -211,7 +211,7 @@ export default function Expenses() {
           <h1 className="page-title">Despesas 🧾</h1>
           <p className="text-gray-500 text-sm">{t('Expenses · Contas e gastos do mês')}</p>
         </div>
-        <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
 
       {/* Summary row */}

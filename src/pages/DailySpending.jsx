@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, Target, Loader2, X, TrendingDown } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses } from '../lib/supabase'
-import MonthSelector from '../components/MonthSelector'
+import MonthPicker from '../components/MonthPicker'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { format, getDaysInMonth } from 'date-fns'
@@ -42,8 +42,8 @@ export default function DailySpending() {
     payment_method: 'cash', // 'cash' ou 'credit_card'
   })
 
-  const load = async () => {
-    setLoading(true)
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true)
     const [dailyRes, incomeRes, expRes] = await Promise.all([
       getDailySpending(user.id, month, year),
       getIncome(user.id, month, year),
@@ -51,7 +51,6 @@ export default function DailySpending() {
     ])
     setItems(dailyRes.data || [])
 
-    // Calcula meta diária: (renda - despesas fixas) / dias do mês
     const totalInc = (incomeRes.data || []).reduce((s, i) => s + Number(i.amount), 0)
     const totalFixed = (expRes.data || [])
       .filter(e => e.category === 'fixed')
@@ -79,7 +78,7 @@ export default function DailySpending() {
     setForm({ description: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), payment_method: 'cash' })
     setShowModal(false)
     setSaving(false)
-    await load()
+    await load(true)  // silent: sem spinner, atualiza em background
     window.dispatchEvent(new Event('finance-updated'))
   }
 
@@ -137,7 +136,7 @@ export default function DailySpending() {
           <h1 className="page-title">Gastos Diários 📅</h1>
           <p className="text-gray-500 text-sm">{t('Daily Spending · Controle do dia a dia')}</p>
         </div>
-        <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
 
       {/* Goal cards */}

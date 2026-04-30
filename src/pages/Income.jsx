@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, TrendingUp, Loader2, X, DollarSign, Pencil } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getIncome, addIncome, updateIncome, deleteIncome } from '../lib/supabase'
-import MonthSelector from '../components/MonthSelector'
+import MonthPicker from '../components/MonthPicker'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useLang } from '../hooks/useLang'
@@ -113,7 +113,7 @@ export default function Income() {
           <h1 className="page-title">Renda 💵</h1>
           <p className="text-gray-500 text-sm">{t('Income · Entradas de dinheiro')}</p>
         </div>
-        <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
 
       {/* Total card */}

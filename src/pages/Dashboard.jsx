@@ -8,9 +8,9 @@ import {
   Target, AlertCircle, ChevronRight, ArrowUpRight, ArrowDownRight, BarChart2
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, getExpenses, getDailySpending, getSavings, getMonthlyTotals } from '../lib/supabase'
+import { getIncome, getExpenses, getDailySpending, getSavings, getMonthlyTotals, getCategoryLimits } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
-import MonthSelector from '../components/MonthSelector'
+import MonthPicker from '../components/MonthPicker'
 import { format } from 'date-fns'
 
 const MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -30,8 +30,10 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
+const stripEmoji = (str) =>
+  String(str).replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '').trim()
+
 // Agrupa apenas gastos diários por categoria/descrição
-// Despesas fixas/variáveis/cartão ficam fora — são tratadas separadamente
 const groupByCategory = (dailyItems) => {
   const map = {}
   dailyItems.forEach(d => {
@@ -109,6 +111,7 @@ export default function Dashboard() {
   const [monthlyTotals, setMonthlyTotals] = useState([])
   const [prevExpenses, setPrevExpenses] = useState([])
   const [prevDaily, setPrevDaily] = useState([])
+  const [limitsMap, setLimitsMap] = useState({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -125,7 +128,8 @@ export default function Dashboard() {
       getMonthlyTotals(user.id, year),
       getExpenses(user.id, prevMonth, prevYear),
       getDailySpending(user.id, prevMonth, prevYear),
-    ]).then(([inc, exp, day, sav, monthly, pExp, pDay]) => {
+      getCategoryLimits(user.id),
+    ]).then(([inc, exp, day, sav, monthly, pExp, pDay, lim]) => {
       setIncome(inc.data || [])
       setExpenses(exp.data || [])
       setDaily(day.data || [])
@@ -133,6 +137,9 @@ export default function Dashboard() {
       setMonthlyTotals(monthly)
       setPrevExpenses(pExp.data || [])
       setPrevDaily(pDay.data || [])
+      const lMap = {}
+      ;(lim.data || []).forEach(l => { lMap[l.category_label] = l })
+      setLimitsMap(lMap)
       setLoading(false)
     })
   }, [user, month, year])
@@ -190,7 +197,7 @@ export default function Dashboard() {
           <h1 className="page-title">Dashboard 📊</h1>
           <p className="text-gray-500 text-sm">{t('Visão geral · Overview')}</p>
         </div>
-        <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
 
       {/* Alerta cartão */}
@@ -260,6 +267,53 @@ export default function Dashboard() {
           <p className="stat-value text-purple-400">{formatBRL(totalSavings)}</p>
         </div>
       </div>
+
+      {/* Alertas de limite de categoria */}
+      {(() => {
+        const alerts = Object.entries(currCats).filter(([cat, spent]) => {
+          const lim = limitsMap[cat] || limitsMap[stripEmoji(cat)]
+          if (!lim || lim.limit_type === 'none') return false
+          const threshold = lim.limit_type === 'value'
+            ? lim.limit_value
+            : totalIncome * (lim.limit_value / 100)
+          return spent >= threshold * 0.9  // alerta a partir de 90%
+        })
+        if (alerts.length === 0) return null
+        return (
+          <div className="space-y-2">
+            {alerts.map(([cat, spent]) => {
+              const lim       = limitsMap[cat] || limitsMap[stripEmoji(cat)]
+              const threshold = lim.limit_type === 'value'
+                ? lim.limit_value
+                : totalIncome * (lim.limit_value / 100)
+              const pct      = Math.min((spent / threshold) * 100, 100)
+              const exceeded = spent >= threshold
+              const fmt = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+              return (
+                <div key={cat} className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${
+                  exceeded
+                    ? 'bg-red-500/10 border-red-500/20'
+                    : 'bg-yellow-500/8 border-yellow-500/15'
+                }`}>
+                  <span className="text-base shrink-0">{exceeded ? '🚨' : '⚠️'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-semibold text-sm ${exceeded ? 'text-red-300' : 'text-yellow-300'}`}>
+                      {exceeded ? `Limite de ${cat} ultrapassado!` : `${cat} quase no limite`}
+                    </p>
+                    <p className="text-gray-400 text-xs mt-0.5">
+                      {fmt(spent)} de {fmt(threshold)} ({pct.toFixed(0)}% usado)
+                    </p>
+                    <div className="h-1 bg-dark-600 rounded-full mt-1.5 overflow-hidden">
+                      <div className={`h-full rounded-full ${exceeded ? 'bg-red-500' : 'bg-yellow-500'}`}
+                        style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Insights automáticos */}
       {insights.length > 0 && (

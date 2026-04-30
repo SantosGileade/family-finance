@@ -94,19 +94,19 @@ export default function BalanceBar() {
   return (
     <>
     <div className="bg-dark-900 border-b border-white/5 px-4 py-2">
-      <div className="max-w-4xl mx-auto flex items-center gap-3 flex-wrap justify-between">
+      <div className="max-w-4xl mx-auto flex items-center gap-2 justify-between">
 
         {/* App name */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-base">💰</span>
           <span className="text-white text-sm font-bold hidden sm:block">FinançasFamília</span>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
           {/* Saldo disponível (sem cartão) */}
           <div className="flex items-center gap-1.5">
             <span className="text-gray-500 text-xs hidden sm:block">Saldo</span>
-            <div className={`flex items-center gap-1.5 rounded-lg px-3 py-1 border ${
+            <div className={`flex items-center gap-1 rounded-lg px-2 py-1 border ${
               isBalancePositive
                 ? 'bg-emerald-500/10 border-emerald-500/20'
                 : 'bg-red-500/15 border-red-500/30'
@@ -134,7 +134,7 @@ export default function BalanceBar() {
             <button
               onClick={() => navigate('/expenses', { state: { tab: 'credit_card' } })}
               title="Ver despesas do cartão"
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1 border transition-opacity hover:opacity-80 active:scale-95 ${
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 border transition-opacity hover:opacity-80 active:scale-95 ${
                 isCardOk
                   ? cardAvailable < 100
                     ? 'bg-yellow-500/10 border-yellow-500/20'

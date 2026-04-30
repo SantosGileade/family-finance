@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react'
+import MonthPicker from '../components/MonthPicker'
 import { useAuth } from '../contexts/AuthContext'
-import { getDailySpending } from '../lib/supabase'
+import { getDailySpending, getIncome, getCategoryLimits } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
 
 const formatBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const COLORS = ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#a855f7']
+
+// Remove o emoji do início da descrição para usar como chave de busca de limite
+// "🍔 Alimentação" → "Alimentação" | "Restaurante" → "Restaurante"
+const stripEmoji = (str) => str.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '').trim()
 
 // Agrupa apenas gastos diários — categorias como Fixas/Variáveis ficam fora
 const groupByCategory = (dailyItems) => {
@@ -35,8 +40,10 @@ export default function Reports() {
   const [year, setYear]   = useState(now.getFullYear())
   const [loading, setLoading] = useState(true)
 
-  const [currDay, setCurrDay] = useState([])
-  const [prevDay, setPrevDay] = useState([])
+  const [currDay,  setCurrDay]  = useState([])
+  const [prevDay,  setPrevDay]  = useState([])
+  const [limitsMap, setLimitsMap] = useState({})
+  const [monthIncome, setMonthIncome] = useState(0)
 
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year
@@ -47,9 +54,16 @@ export default function Reports() {
     Promise.all([
       getDailySpending(user.id, month, year),
       getDailySpending(user.id, prevMonth, prevYear),
-    ]).then(([cd, pd]) => {
+      getCategoryLimits(user.id),
+      getIncome(user.id, month, year),
+    ]).then(([cd, pd, lim, inc]) => {
       setCurrDay(cd.data || [])
       setPrevDay(pd.data || [])
+      const lMap = {}
+      ;(lim.data || []).forEach(l => { lMap[l.category_label] = l })
+      setLimitsMap(lMap)
+      const totalInc = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
+      setMonthIncome(totalInc)
       setLoading(false)
     })
   }, [user, month, year])
@@ -106,29 +120,7 @@ export default function Reports() {
           <h1 className="page-title">Relatório 📊</h1>
           <p className="text-gray-500 text-sm">Análise completa por categoria</p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Seletor de mês simples */}
-          <button
-            onClick={() => {
-              const d = new Date(year, month - 2, 1)
-              setMonth(d.getMonth() + 1)
-              setYear(d.getFullYear())
-            }}
-            className="text-gray-400 hover:text-white text-lg px-2 py-1 rounded-lg hover:bg-white/5"
-          >‹</button>
-          <span className="text-white text-sm font-medium min-w-[100px] text-center capitalize">
-            {monthName(month, year)}
-          </span>
-          <button
-            onClick={() => {
-              const d = new Date(year, month, 1)
-              setMonth(d.getMonth() + 1)
-              setYear(d.getFullYear())
-            }}
-            className="text-gray-400 hover:text-white text-lg px-2 py-1 rounded-lg hover:bg-white/5"
-            disabled={month === now.getMonth() + 1 && year === now.getFullYear()}
-          >›</button>
-        </div>
+        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
 
       {/* Tabs */}
@@ -242,14 +234,14 @@ export default function Reports() {
               {pieData.length > 0 && (
                 <div className="card">
                   <p className="section-title mb-1">Distribuição por categoria</p>
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={180}>
                     <PieChart>
                       <Pie
                         data={period === 'prev'
                           ? prevRanked.map(([name, value]) => ({ name, value }))
                           : pieData}
                         cx="50%" cy="50%"
-                        innerRadius={55} outerRadius={85}
+                        innerRadius={50} outerRadius={75}
                         paddingAngle={2} dataKey="value"
                       >
                         {pieData.map((_, i) => (
@@ -260,12 +252,17 @@ export default function Reports() {
                         formatter={v => [formatBRL(v), '']}
                         contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '12px' }}
                       />
-                      <Legend
-                        iconType="circle" iconSize={8}
-                        formatter={v => <span style={{ color: '#9ca3af', fontSize: 10 }}>{v}</span>}
-                      />
                     </PieChart>
                   </ResponsiveContainer>
+                  {/* Legenda separada — não sobrepõe o gráfico */}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2 justify-center">
+                    {(period === 'prev' ? prevRanked : currRanked).slice(0, 8).map(([name], i) => (
+                      <div key={name} className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                        <span className="text-gray-400 text-[10px] truncate max-w-[70px]">{name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -273,38 +270,64 @@ export default function Reports() {
               {activeData.length > 0 && (
                 <div>
                   <p className="section-title mb-3">Ranking de categorias</p>
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {activeData.map(([cat, val], i) => {
-                      const pct     = activeTotal > 0 ? (val / activeTotal) * 100 : 0
-                      const prevVal = prevCats[cat] || 0
-                      const currVal = currCats[cat] || 0
-                      const catDiff = prevVal > 0 ? ((currVal - prevVal) / prevVal) * 100 : 0
+                      const prevVal  = prevCats[cat] || 0
+                      const currVal  = currCats[cat] || 0
+                      const catDiff  = prevVal > 0 ? ((currVal - prevVal) / prevVal) * 100 : 0
+
+                      // Procura limite: tenta chave exata e depois sem emoji
+                      // "🍔 Alimentação" → tenta "🍔 Alimentação" e depois "Alimentação"
+                      const lim = limitsMap[cat] || limitsMap[stripEmoji(cat)] || null
+                      let pct = 0
+                      let limitLabel = null
+                      let limitExceeded = false
+
+                      if (lim && lim.limit_type !== 'none' && period === 'current') {
+                        const threshold = lim.limit_type === 'value'
+                          ? lim.limit_value
+                          : monthIncome * (lim.limit_value / 100)
+                        pct = threshold > 0 ? (val / threshold) * 100 : 0
+                        limitExceeded = pct >= 100
+                        limitLabel = `${pct.toFixed(0)}% do limite`
+                      } else {
+                        pct = activeTotal > 0 ? (val / activeTotal) * 100 : 0
+                        limitLabel = `${pct.toFixed(0)}% do total`
+                      }
+
+                      const barColor = limitExceeded ? '#ef4444'
+                                     : pct > 80      ? '#f59e0b'
+                                     : COLORS[i % COLORS.length]
+
                       return (
-                        <div key={cat} className="card p-3">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="text-xs text-gray-600 font-bold w-4 shrink-0">{i+1}</span>
-                            <p className="flex-1 text-white text-sm font-medium truncate">{cat}</p>
-                            <p className="text-white text-sm font-bold">{formatBRL(val)}</p>
+                        <div key={cat} className={`border rounded-xl p-3 ${
+                          limitExceeded ? 'bg-red-500/8 border-red-500/20' : 'bg-dark-700 border-white/6'
+                        }`}>
+                          <div className="flex items-start justify-between gap-1 mb-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs text-gray-600 font-bold shrink-0">{i+1}</span>
+                              <p className="text-white text-xs font-medium truncate">{cat}</p>
+                            </div>
                             {period === 'current' && prevVal > 0 && (
-                              <div className={`flex items-center gap-0.5 text-xs font-medium ${
+                              <div className={`flex items-center gap-0.5 text-[10px] font-medium shrink-0 ${
                                 catDiff > 0 ? 'text-red-400' : 'text-emerald-400'
                               }`}>
-                                {catDiff > 0 ? <ArrowUpRight size={11}/> : <ArrowDownRight size={11}/>}
+                                {catDiff > 0 ? <ArrowUpRight size={10}/> : <ArrowDownRight size={10}/>}
                                 {Math.abs(catDiff).toFixed(0)}%
                               </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 bg-dark-600 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${Math.min(pct, 100)}%`,
-                                  backgroundColor: COLORS[i % COLORS.length],
-                                }}
-                              />
+                          <p className={`text-sm font-bold mb-2 ${limitExceeded ? 'text-red-400' : 'text-white'}`}>
+                            {formatBRL(val)}
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1 h-1 bg-dark-600 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }} />
                             </div>
-                            <span className="text-gray-500 text-xs w-8 text-right">{pct.toFixed(0)}%</span>
+                            <span className={`text-[10px] shrink-0 ${
+                              limitExceeded ? 'text-red-400 font-medium' : 'text-gray-500'
+                            }`}>{limitLabel}</span>
                           </div>
                         </div>
                       )
