@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil } from 'lucide-react'
+import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil, CheckCircle, Clock } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getExpenses, addExpense, updateExpense, deleteExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
+import { getExpenses, addExpense, updateExpense, deleteExpense, payExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
 import { usePlanGate } from '../contexts/PlanGateContext'
 import MonthPicker from '../components/MonthPicker'
@@ -50,8 +50,8 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [confirmId, setConfirmId] = useState(null)      // { id, source: 'expense' | 'daily' }
-  const [editingItem, setEditingItem] = useState(null)  // { id, source: 'expense' | 'daily' }
+  const [confirmId, setConfirmId] = useState(null)
+  const [editingItem, setEditingItem] = useState(null)
 
   const [form, setForm] = useState({
     description: '',
@@ -66,8 +66,47 @@ export default function Expenses() {
       getExpenses(user.id, month, year),
       getDailySpending(user.id, month, year),
     ])
-    setItems(expRes.data || [])
+    let expenses = expRes.data || []
     const allDaily = dailyRes.data || []
+
+    // Auto-copia despesas fixas do mês anterior quando o mês atual ainda não tem nenhuma
+    // Só faz isso para o mês atual (não para meses passados)
+    const now = new Date()
+    const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
+    const hasFixed = expenses.some(e => e.is_recurring && e.category === 'fixed')
+
+    if (isCurrentMonth && !hasFixed) {
+      const prevMonth = month === 1 ? 12 : month - 1
+      const prevYear  = month === 1 ? year - 1 : year
+      const { data: prevExp } = await getExpenses(user.id, prevMonth, prevYear)
+      const recurring = (prevExp || []).filter(e => e.is_recurring && e.category === 'fixed')
+
+      if (recurring.length > 0) {
+        const copies = await Promise.all(recurring.map(item => {
+          const day     = new Date(item.date).getDate()
+          const lastDay = new Date(year, month, 0).getDate()
+          const newDay  = Math.min(day, lastDay)
+          const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(newDay).padStart(2,'0')}`
+          return addExpense({
+            user_id: user.id,
+            description: item.description,
+            amount: item.amount,
+            category: 'fixed',
+            date: dateStr,
+            month,
+            year,
+            is_recurring: true,
+            status: 'pendente',
+          })
+        }))
+        // Atualiza a lista com as cópias recém-criadas
+        const newItems = copies.map(r => r.data?.[0]).filter(Boolean)
+        expenses = [...expenses, ...newItems]
+        window.dispatchEvent(new Event('finance-updated'))
+      }
+    }
+
+    setItems(expenses)
     setDailyCardItems(allDaily.filter(d => d.payment_method === 'credit_card'))
     setDailyCashItems(allDaily.filter(d => d.payment_method !== 'credit_card'))
     setLoading(false)
@@ -149,13 +188,13 @@ export default function Expenses() {
         is_recurring: form.category === 'fixed',
       })
 
-      // Se for fixa, replica automaticamente nos meses futuros do ano
+      // Se marcada como recorrente, replica para os meses restantes do ano
       if (form.category === 'fixed') {
         const futures = []
         for (let m = enteredMonth + 1; m <= 12; m++) {
           const lastDay = new Date(enteredYear, m, 0).getDate()
-          const day = Math.min(enteredDay, lastDay)
-          const dateStr = `${enteredYear}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const newDay  = Math.min(enteredDay, lastDay)
+          const dateStr = `${enteredYear}-${String(m).padStart(2,'0')}-${String(newDay).padStart(2,'0')}`
           futures.push(addExpense({
             user_id: user.id,
             description: form.description,
@@ -165,6 +204,7 @@ export default function Expenses() {
             month: m,
             year: enteredYear,
             is_recurring: true,
+            status: 'pendente',   // futuras: pendente até o usuário pagar
           }))
         }
         await Promise.all(futures)
@@ -174,6 +214,16 @@ export default function Expenses() {
     setSaving(false)
     await load()
     window.dispatchEvent(new Event('finance-updated'))
+  }
+
+
+  // Marca despesa como paga e atualiza saldo
+  const handlePay = async (id) => {
+    const { data } = await payExpense(id)
+    if (data?.[0]) {
+      setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'pago' } : i))
+      window.dispatchEvent(new Event('finance-updated'))
+    }
   }
 
   const handleDelete = async () => {
@@ -256,6 +306,7 @@ export default function Expenses() {
         <Plus size={18} /> {t('Adicionar despesa · Add expense')}
       </button>
 
+
       {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {TABS.map(tabItem => (
@@ -292,42 +343,105 @@ export default function Expenses() {
           </button>
         </div>
       ) : (
-        <div className="space-y-2">
-          {/* Regular expense items */}
-          {filteredExpenses.map((item) => {
-            const ci = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.variable
-            return (
-              <div key={`exp-${item.id}`} className="card-hover flex items-center gap-3 p-3">
-                <div className={`w-10 h-10 ${ci.bg} rounded-xl flex items-center justify-center text-lg shrink-0`}>
-                  {ci.emoji}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-white font-medium text-sm truncate">{item.description}</p>
-                    {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
-                    {item.category === 'variable' && !item.is_recurring && (
-                      <span className="text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded-full">🛒 Variável</span>
-                    )}
-                    {item.category === 'credit_card' && (
-                      <span className="text-xs bg-red-500/15 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded-full">💳 Cartão</span>
-                    )}
-                  </div>
-                  <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
-                </div>
-                <div className="text-right">
-                  <p className={`font-bold ${ci.text}`}>{formatBRL(item.amount)}</p>
-                  <div className="flex gap-1 justify-end mt-1">
-                    <button onClick={() => openEdit(item, 'expense')} className="btn-secondary text-xs">
-                      <Pencil size={12} /> Editar
-                    </button>
-                    <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
-                      <Trash2 size={12} /> Excluir
-                    </button>
-                  </div>
-                </div>
+        <div className="space-y-4">
+          {/* ── PENDENTES ─────────────────────────────── */}
+          {filteredExpenses.filter(i => i.status === 'pendente').length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Clock size={14} className="text-amber-400" />
+                <p className="text-amber-400 text-xs font-semibold uppercase tracking-wide">
+                  Pendentes · {filteredExpenses.filter(i => i.status === 'pendente').length}
+                </p>
               </div>
-            )
-          })}
+              <div className="space-y-2">
+                {filteredExpenses.filter(i => i.status === 'pendente').map(item => {
+                  const ci = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.variable
+                  return (
+                    <div key={`exp-${item.id}`}
+                      className="flex items-center gap-3 p-3 rounded-xl border
+                                 bg-amber-500/5 border-amber-500/15">
+                      <div className={`w-10 h-10 ${ci.bg} rounded-xl flex items-center justify-center text-lg shrink-0`}>
+                        {ci.emoji}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white font-medium text-sm truncate">{item.description}</p>
+                          {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
+                        </div>
+                        <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-amber-400 font-bold text-sm">{formatBRL(item.amount)}</p>
+                        <div className="flex gap-1 justify-end mt-1">
+                          <button
+                            onClick={() => handlePay(item.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
+                                       bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400
+                                       border border-emerald-500/30 rounded-lg transition-all active:scale-95"
+                          >
+                            <CheckCircle size={11} /> Pagar
+                          </button>
+                          <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── PAGAS ─────────────────────────────────── */}
+          {filteredExpenses.filter(i => !i.status || i.status === 'pago').length > 0 && (
+            <div>
+              {filteredExpenses.filter(i => i.status === 'pendente').length > 0 && (
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle size={14} className="text-emerald-400" />
+                  <p className="text-emerald-400 text-xs font-semibold uppercase tracking-wide">
+                    Pagas · {filteredExpenses.filter(i => !i.status || i.status === 'pago').length}
+                  </p>
+                </div>
+              )}
+              <div className="space-y-2">
+                {filteredExpenses.filter(i => !i.status || i.status === 'pago').map(item => {
+                  const ci = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.variable
+                  return (
+                    <div key={`exp-${item.id}`} className="card-hover flex items-center gap-3 p-3">
+                      <div className={`w-10 h-10 ${ci.bg} rounded-xl flex items-center justify-center text-lg shrink-0`}>
+                        {ci.emoji}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white font-medium text-sm truncate">{item.description}</p>
+                          {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
+                          {item.category === 'variable' && !item.is_recurring && (
+                            <span className="text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded-full">🛒 Variável</span>
+                          )}
+                          {item.category === 'credit_card' && (
+                            <span className="text-xs bg-red-500/15 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded-full">💳 Cartão</span>
+                          )}
+                        </div>
+                        <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-bold ${ci.text}`}>{formatBRL(item.amount)}</p>
+                        <div className="flex gap-1 justify-end mt-1">
+                          <button onClick={() => openEdit(item, 'expense')} className="btn-secondary text-xs">
+                            <Pencil size={12} /> Editar
+                          </button>
+                          <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                            <Trash2 size={12} /> Excluir
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Daily spending items paid by cash/debit (only shown in All tab) */}
           {tab === 'all' && dailyCashItems.map((item) => (

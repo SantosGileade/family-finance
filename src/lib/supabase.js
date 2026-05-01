@@ -65,6 +65,15 @@ export const deleteExpense = async (id) => {
   return { error }
 }
 
+export const payExpense = async (id) => {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({ status: 'pago' })
+    .eq('id', id)
+    .select()
+  return { data, error }
+}
+
 // ─── DAILY SPENDING ───────────────────────────────────────────────────────────
 
 export const getDailySpending = async (userId, month, year) => {

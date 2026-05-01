@@ -18,6 +18,7 @@ export default function BalanceBar() {
   const [income, setIncome] = useState(0)
   const [cashExpenses, setCashExpenses] = useState(0)
   const [cardUsed, setCardUsed] = useState(0)
+  const [prevCarry, setPrevCarry] = useState(0)  // saldo carregado do mês anterior
   const [cardLimit, setCardLimit] = useState(400)
   const [loading, setLoading] = useState(true)
   const [showLimitModal, setShowLimitModal] = useState(false)
@@ -35,32 +36,42 @@ export default function BalanceBar() {
   const load = useCallback(async () => {
     if (!user) return
     setLoading(true)
-    const [inc, exp, daily] = await Promise.all([
+    const prevMonth = month === 1 ? 12 : month - 1
+    const prevYear  = month === 1 ? year - 1 : year
+
+    const [inc, exp, daily, pInc, pExp, pDay] = await Promise.all([
       getIncome(user.id, month, year),
       getExpenses(user.id, month, year),
       getDailySpending(user.id, month, year),
+      getIncome(user.id, prevMonth, prevYear),
+      getExpenses(user.id, prevMonth, prevYear),
+      getDailySpending(user.id, prevMonth, prevYear),
     ])
-    const totalInc = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
+    const totalInc   = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
+    const allExp     = exp.data || []
+    const allDaily   = daily.data || []
+    // Só despesas pagas (status='pago' ou sem status — retrocompatibilidade) afetam o saldo
+    const paidExp        = allExp.filter(e => !e.status || e.status === 'pago')
+    const totalCardExp   = paidExp.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+    const totalCardDaily = allDaily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
+    const currCash   = (paidExp.reduce((s,e) => s + Number(e.amount), 0) - totalCardExp)
+                     + (allDaily.reduce((s,d) => s + Number(d.amount), 0) - totalCardDaily)
 
-    const allExp = exp.data || []
-    const allDaily = daily.data || []
-
-    // Total de todas as saídas (despesas fixas/variáveis + gastos diários)
-    const totalExp = allExp.reduce((s, e) => s + Number(e.amount), 0)
-    const totalDaily = allDaily.reduce((s, d) => s + Number(d.amount), 0)
-
-    // Limite do cartão = despesas categorizadas como cartão + gastos diários pagos no cartão
-    const totalCardExp = allExp
-      .filter(e => e.category === 'credit_card')
-      .reduce((s, e) => s + Number(e.amount), 0)
-    const totalCardDaily = allDaily
-      .filter(d => d.payment_method === 'credit_card')
-      .reduce((s, d) => s + Number(d.amount), 0)
+    // Saldo do mês anterior (carryover)
+    const pIncTotal  = (pInc.data || []).reduce((s, i) => s + Number(i.amount), 0)
+    const pAllExp    = pExp.data || []
+    const pAllDay    = pDay.data || []
+    const pPaidExp   = pAllExp.filter(e => !e.status || e.status === 'pago')
+    const pCardExp   = pPaidExp.filter(e => e.category === 'credit_card').reduce((s,e) => s + Number(e.amount), 0)
+    const pCardDay   = pAllDay.filter(d => d.payment_method === 'credit_card').reduce((s,d) => s + Number(d.amount), 0)
+    const prevCash   = (pPaidExp.reduce((s,e) => s + Number(e.amount), 0) - pCardExp)
+                     + (pAllDay.reduce((s,d) => s + Number(d.amount), 0) - pCardDay)
+    const prevBalanceCarry = pIncTotal - prevCash  // o que sobrou/faltou no mês anterior
 
     setIncome(totalInc)
-    // Só fixas + variáveis (sem cartão) — cartão é dívida futura, não sai do caixa agora
-    setCashExpenses((totalExp - totalCardExp) + (totalDaily - totalCardDaily))
-    setCardUsed(totalCardExp + totalCardDaily) // cartão de despesas + cartão do diário
+    setCashExpenses(currCash)
+    setCardUsed(totalCardExp + totalCardDaily)
+    setPrevCarry(prevBalanceCarry)
     setLoading(false)
   }, [user, month, year])
 
@@ -86,7 +97,7 @@ export default function BalanceBar() {
     setLimitInput('')
   }
 
-  const balance = income - cashExpenses
+  const balance = income - cashExpenses + prevCarry  // inclui saldo do mês anterior
   const cardAvailable = cardLimit - cardUsed
   const isBalancePositive = balance >= 0
   const isCardOk = cardAvailable > 0

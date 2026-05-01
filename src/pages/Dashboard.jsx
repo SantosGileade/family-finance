@@ -104,15 +104,16 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
 
-  const [income, setIncome] = useState([])
-  const [expenses, setExpenses] = useState([])
-  const [daily, setDaily] = useState([])
-  const [savings, setSavings] = useState([])
-  const [monthlyTotals, setMonthlyTotals] = useState([])
+  const [income,       setIncome]       = useState([])
+  const [expenses,     setExpenses]     = useState([])
+  const [daily,        setDaily]        = useState([])
+  const [savings,      setSavings]      = useState([])
+  const [monthlyTotals,setMonthlyTotals]= useState([])
   const [prevExpenses, setPrevExpenses] = useState([])
-  const [prevDaily, setPrevDaily] = useState([])
-  const [limitsMap, setLimitsMap] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [prevDaily,    setPrevDaily]    = useState([])
+  const [prevIncome,   setPrevIncome]   = useState([])
+  const [limitsMap,    setLimitsMap]    = useState({})
+  const [loading,      setLoading]      = useState(true)
 
   useEffect(() => {
     if (!user) return
@@ -129,7 +130,8 @@ export default function Dashboard() {
       getExpenses(user.id, prevMonth, prevYear),
       getDailySpending(user.id, prevMonth, prevYear),
       getCategoryLimits(user.id),
-    ]).then(([inc, exp, day, sav, monthly, pExp, pDay, lim]) => {
+      getIncome(user.id, prevMonth, prevYear),
+    ]).then(([inc, exp, day, sav, monthly, pExp, pDay, lim, pInc]) => {
       setIncome(inc.data || [])
       setExpenses(exp.data || [])
       setDaily(day.data || [])
@@ -137,6 +139,7 @@ export default function Dashboard() {
       setMonthlyTotals(monthly)
       setPrevExpenses(pExp.data || [])
       setPrevDaily(pDay.data || [])
+      setPrevIncome(pInc.data || [])
       const lMap = {}
       ;(lim.data || []).forEach(l => { lMap[l.category_label] = l })
       setLimitsMap(lMap)
@@ -148,11 +151,26 @@ export default function Dashboard() {
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0)
                       + daily.reduce((s, d) => s + Number(d.amount), 0)
   const totalSavings  = savings.reduce((s, sv) => s + Number(sv.amount), 0)
-  const cashExpenses  = expenses.filter(e => e.category !== 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+  // Só despesas pagas afetam o saldo
+  const paidExpenses  = expenses.filter(e => !e.status || e.status === 'pago')
+  const cashExpenses  = paidExpenses.filter(e => e.category !== 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
                       + daily.filter(d => d.payment_method !== 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
   const balance       = totalIncome - cashExpenses
-  const creditCard    = expenses.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+  const creditCard    = paidExpenses.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
                       + daily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
+
+  // Total pendente (para mostrar no alerta)
+  const totalPending  = expenses.filter(e => e.status === 'pendente').reduce((s, e) => s + Number(e.amount), 0)
+
+  // Saldo do mês anterior (carregado para o mês atual)
+  const prevIncomeTotal = prevIncome.reduce((s, i) => s + Number(i.amount), 0)
+  const prevCashExp     = prevExpenses.filter(e => e.category !== 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+                        + prevDaily.filter(d => d.payment_method !== 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
+  const prevMonthBalance = prevIncomeTotal - prevCashExp  // saldo que sobrou/faltou no mês anterior
+
+  // Saldo acumulado = saldo anterior + saldo deste mês
+  const accumulatedBalance = prevMonthBalance + balance
+  const hasPrevBalance = prevIncomeTotal > 0 || prevCashExp > 0
 
   const prevTotal = prevExpenses.reduce((s, e) => s + Number(e.amount), 0)
                   + prevDaily.reduce((s, d) => s + Number(d.amount), 0)
@@ -248,15 +266,22 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className={`stat-card border ${balance >= 0 ? 'border-blue-500/20' : 'border-red-500/20'}`}>
+        <div className={`stat-card border ${accumulatedBalance >= 0 ? 'border-blue-500/20' : 'border-red-500/20'}`}>
           <div className="flex items-center justify-between">
             <span className="stat-label">{t('Saldo · Balance')}</span>
-            <Wallet size={16} className={balance >= 0 ? 'text-blue-400' : 'text-red-400'} />
+            <Wallet size={16} className={accumulatedBalance >= 0 ? 'text-blue-400' : 'text-red-400'} />
           </div>
-          <p className={`stat-value ${balance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
-            {formatBRL(balance)}
+          <p className={`stat-value ${accumulatedBalance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+            {formatBRL(accumulatedBalance)}
           </p>
-          <p className="text-gray-600 text-xs mt-0.5">Renda − despesas</p>
+          {hasPrevBalance && prevMonthBalance !== 0 && (
+            <p className={`text-xs mt-0.5 ${prevMonthBalance >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+              {prevMonthBalance >= 0 ? '+' : ''}{formatBRL(prevMonthBalance)} do mês anterior
+            </p>
+          )}
+          {!hasPrevBalance && (
+            <p className="text-gray-600 text-xs mt-0.5">Renda − despesas</p>
+          )}
         </div>
 
         <div className="stat-card border border-purple-500/20">
@@ -267,6 +292,25 @@ export default function Dashboard() {
           <p className="stat-value text-purple-400">{formatBRL(totalSavings)}</p>
         </div>
       </div>
+
+      {/* Aviso de despesas pendentes */}
+      {totalPending > 0 && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl
+                        bg-amber-500/8 border border-amber-500/20">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⏳</span>
+            <div>
+              <p className="text-amber-300 text-sm font-semibold">
+                {formatBRL(totalPending)} pendente de pagamento
+              </p>
+              <p className="text-gray-500 text-xs">Não impacta o saldo até ser pago</p>
+            </div>
+          </div>
+          <Link to="/expenses" className="text-amber-400 text-xs hover:text-amber-300 flex items-center gap-1 shrink-0">
+            Ver <ChevronRight size={13} />
+          </Link>
+        </div>
+      )}
 
       {/* Alertas de limite de categoria */}
       {(() => {
