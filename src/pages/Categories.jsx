@@ -252,7 +252,7 @@ export default function Categories() {
   return (
     <div className="space-y-6 animate-fade-in pb-6">
       <div>
-        <h1 className="page-title">Categorias 🏷️</h1>
+        <h1 className="page-title">Categorias</h1>
         <p className="text-gray-500 text-sm">Personalize suas categorias de gastos</p>
       </div>
 

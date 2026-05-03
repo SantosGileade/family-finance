@@ -117,7 +117,7 @@ export default function Reports() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="page-title">Relatório 📊</h1>
+          <h1 className="page-title">Relatório</h1>
           <p className="text-gray-500 text-sm">Análise completa por categoria</p>
         </div>
         <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />

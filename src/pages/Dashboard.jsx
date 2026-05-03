@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   ChevronRight, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Wallet
+  TrendingUp, TrendingDown, Wallet, CreditCard
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -25,6 +25,118 @@ const groupByCategory = (items) => {
     map[k] = (map[k] || 0) + Number(d.amount)
   })
   return map
+}
+
+// ── Pool de mensagens contextuais ─────────────────────────────────
+// Cada categoria de mensagem tem múltiplas variações para não repetir
+const MSG_POOL = {
+  catNearLimit: [
+    (cat, pct) => `🔶 ${cat} está em ${pct}% do seu limite mensal.`,
+    (cat, pct) => `Atenção! Você já usou ${pct}% do limite de ${cat}.`,
+    (cat, pct) => `Cuidado com ${cat} — faltam só ${100 - pct}% para atingir o limite.`,
+    (cat, pct) => `${cat} próximo do teto: ${pct}% do limite utilizado.`,
+  ],
+  catOverLimit: [
+    (cat) => `🚨 Você ultrapassou o limite de ${cat} este mês!`,
+    (cat) => `⚠️ Limite de ${cat} estourado. Revise seus gastos.`,
+    (cat) => `${cat} passou do limite configurado. Hora de rever!`,
+  ],
+  spendingDown: [
+    (pct) => `Seus gastos caíram ${pct}% em relação ao mês passado. 🎉`,
+    (pct) => `Ótimo! Você gastou ${pct}% menos que no mês anterior.`,
+    (pct) => `Progresso real: ${pct}% de redução nos gastos. 💪`,
+    (pct) => `Mês mais econômico: ${pct}% abaixo do período anterior.`,
+  ],
+  spendingUp: [
+    (pct) => `Gastos ${pct}% acima do mês passado. Fique de olho!`,
+    (pct) => `Você gastou ${pct}% a mais que no período anterior.`,
+    (pct) => `Atenção: ${pct}% de aumento nos gastos este mês.`,
+  ],
+  todayOnTrack: [
+    () => `Gasto de hoje dentro da meta diária. Bom ritmo! ✅`,
+    () => `Meta diária respeitada. Continue assim!`,
+    () => `Hoje está no caminho certo com os gastos. 👍`,
+  ],
+  todayOver: [
+    (goal) => `Gasto de hoje ultrapassou sua meta de ${goal}.`,
+    (goal) => `Meta diária de ${goal} superada. Atenção amanhã!`,
+  ],
+  topCatHigh: [
+    (cat, pct) => `${cat} representa ${pct}% de todos os seus gastos.`,
+    (cat, pct) => `Sua maior categoria é ${cat} com ${pct}% do total.`,
+  ],
+  daysLeft: [
+    (days, bal) => `Faltam ${days} dias no mês com ${bal} disponível.`,
+    (days) => `Últimos ${days} dias do mês. Mantenha o controle!`,
+  ],
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+
+function buildMessages({ currCats, limitsMap, totalIncome, totalExpenses, prevTotalExp,
+                         todaySpend, dailyGoal, catRanked, currTotal, daysInMonth, daysElapsed }) {
+  const fmt = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  const candidates = []
+
+  // 1. Alertas de limite por categoria
+  Object.entries(currCats).forEach(([cat, spent]) => {
+    const lim = limitsMap[cat] || limitsMap[stripEmoji(cat)]
+    if (!lim || lim.limit_type === 'none') return
+    const threshold = lim.limit_type === 'value'
+      ? lim.limit_value
+      : totalIncome * lim.limit_value / 100
+    if (threshold <= 0) return
+    const pct = Math.round((spent / threshold) * 100)
+    if (pct >= 100) {
+      candidates.push({ type: 'warning', priority: 1, text: pickRandom(MSG_POOL.catOverLimit)(cat) })
+    } else if (pct >= 75) {
+      candidates.push({ type: 'warning', priority: 2, text: pickRandom(MSG_POOL.catNearLimit)(cat, pct) })
+    }
+  })
+
+  // 2. Comparação com mês anterior
+  if (prevTotalExp > 0) {
+    const diff = totalExpenses - prevTotalExp
+    const pct  = Math.abs((diff / prevTotalExp) * 100).toFixed(0)
+    if (diff < -prevTotalExp * 0.05) {
+      candidates.push({ type: 'success', priority: 3, text: pickRandom(MSG_POOL.spendingDown)(pct) })
+    } else if (diff > prevTotalExp * 0.1) {
+      candidates.push({ type: 'warning', priority: 3, text: pickRandom(MSG_POOL.spendingUp)(pct) })
+    }
+  }
+
+  // 3. Gasto do dia
+  if (todaySpend > dailyGoal * 1.1) {
+    candidates.push({ type: 'warning', priority: 4, text: pickRandom(MSG_POOL.todayOver)(fmt(dailyGoal)) })
+  } else if (todaySpend > 0 && todaySpend <= dailyGoal * 0.6) {
+    candidates.push({ type: 'success', priority: 5, text: pickRandom(MSG_POOL.todayOnTrack)() })
+  }
+
+  // 4. Categoria dominante
+  if (catRanked[0] && currTotal > 0) {
+    const [topCat, topVal] = catRanked[0]
+    const pct = Math.round((topVal / currTotal) * 100)
+    if (pct >= 35) {
+      candidates.push({ type: 'info', priority: 5, text: pickRandom(MSG_POOL.topCatHigh)(topCat, pct) })
+    }
+  }
+
+  // 5. Dias restantes no mês
+  const daysLeft = daysInMonth - daysElapsed
+  if (daysLeft <= 5 && daysLeft > 0) {
+    candidates.push({ type: 'info', priority: 6, text: pickRandom(MSG_POOL.daysLeft)(daysLeft, fmt(0)) })
+  }
+
+  // Ordena por prioridade e remove duplicatas de tipo
+  const sorted = candidates.sort((a, b) => a.priority - b.priority)
+  const seen = new Set()
+  return sorted.filter(m => {
+    if (seen.has(m.type + m.priority)) return false
+    seen.add(m.type + m.priority)
+    return true
+  })
 }
 
 export default function Dashboard() {
@@ -109,9 +221,15 @@ export default function Dashboard() {
   const cashExp      = paidExp.filter(e => e.category !== 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
                      + daily.filter(d => d.payment_method !== 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
   const balance      = totalIncome - cashExp
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0)
+  // Apenas despesas pagas (já descontadas do bolso)
+  const totalExpenses = paidExp.reduce((s, e) => s + Number(e.amount), 0)
                       + daily.reduce((s, d) => s + Number(d.amount), 0)
-  const totalPending = expenses.filter(e => e.status === 'pendente').reduce((s, e) => s + Number(e.amount), 0)
+  const totalPending  = expenses.filter(e => e.status === 'pendente').reduce((s, e) => s + Number(e.amount), 0)
+
+  // Cartão
+  const creditCardUsed = paidExp.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+                       + daily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
+  const cardAvailable  = cardLimit - creditCardUsed
 
   // Saldo anterior
   const pIncTotal = prevIncome.reduce((s, i) => s + Number(i.amount), 0)
@@ -135,19 +253,22 @@ export default function Dashboard() {
   const catRanked = Object.entries(currCats).sort((a, b) => b[1] - a[1])
   const pieData   = catRanked.slice(0, 6).map(([name, value]) => ({ name, value }))
 
-  // Insight único — o mais relevante
-  let insight = null
-  if (prevTotal > 0 && Math.abs(totalExpenses - prevTotalExp) > prevTotalExp * 0.05) {
-    const pct = Math.abs(totalDiff).toFixed(0)
-    insight = totalDiff < 0
-      ? { type: 'good', text: `Gastos ${pct}% abaixo do mês passado 🎉` }
-      : { type: 'bad',  text: `Gastos ${pct}% acima do mês passado` }
-  } else if (catRanked[0]) {
-    insight = { type: 'info', text: `Maior gasto: ${catRanked[0][0]} — ${formatBRL(catRanked[0][1])}` }
-  }
-
   const todayStr   = format(new Date(), 'yyyy-MM-dd')
   const todaySpend = daily.filter(d => d.date === todayStr).reduce((s, d) => s + Number(d.amount), 0)
+
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const daysElapsed = now.getDate()
+  const totalFixed  = expenses.filter(e => e.category === 'fixed').reduce((s, e) => s + Number(e.amount), 0)
+  const availableForDaily = totalIncome - totalFixed
+  const dailyGoal = availableForDaily > 0 ? Math.max(10, Math.round(availableForDaily / daysInMonth)) : 30
+
+  // Gera mensagens contextuais (max 2 total; se pendências visíveis, max 1)
+  const allMessages = buildMessages({
+    currCats, limitsMap, totalIncome, totalExpenses, prevTotalExp,
+    todaySpend, dailyGoal, catRanked, currTotal, daysInMonth, daysElapsed,
+  })
+  const msgLimit = totalPending > 0 ? 1 : 2
+  const smartMessages = allMessages.slice(0, msgLimit)
 
   if (loading) {
     return (
@@ -163,7 +284,7 @@ export default function Dashboard() {
       {/* ── HEADER ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Dashboard 📊</h1>
+          <h1 className="page-title">Dashboard</h1>
           <p className="text-gray-500 text-sm">{t('Visão geral · Overview')}</p>
         </div>
         <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
@@ -190,26 +311,72 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Linha inferior: Renda / Despesas — mais compacta */}
+        {/* Linha inferior: Despesas pagas | Cartão disponível */}
         <div className="flex gap-4 pt-2.5 mt-2.5 border-t border-white/6">
           <div className="flex items-center gap-1.5">
-            <TrendingUp size={11} className="text-emerald-400 shrink-0" />
-            <span className="text-gray-500 text-xs">{t('Renda · Income')}</span>
-            <span className="text-emerald-400 text-xs font-semibold">{formatBRL(totalIncome)}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
             <TrendingDown size={11} className="text-red-400 shrink-0" />
-            <span className="text-gray-500 text-xs">{t('Despesas · Expenses')}</span>
+            <span className="text-gray-500 text-xs">Gasto</span>
             <span className="text-red-400 text-xs font-semibold">{formatBRL(totalExpenses)}</span>
-            {prevTotalExp > 0 && (
-              <span className={`text-[10px] font-medium flex items-center gap-0.5 ${totalDiff > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                {totalDiff > 0 ? <ArrowUpRight size={9} /> : <ArrowDownRight size={9} />}
-                {Math.abs(totalDiff).toFixed(0)}%
-              </span>
-            )}
+          </div>
+          <div className="w-px bg-white/10 self-stretch" />
+          <div className="flex items-center gap-1.5">
+            <CreditCard size={11} className={cardAvailable >= 0 ? 'text-blue-400 shrink-0' : 'text-red-400 shrink-0'} />
+            <span className="text-gray-500 text-xs">Cartão</span>
+            <span className={`text-xs font-semibold ${cardAvailable >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+              {formatBRL(Math.max(cardAvailable, 0))} livre
+            </span>
           </div>
         </div>
       </div>
+
+      {/* ── GASTO DIÁRIO ─────────────────────────────────────────── */}
+      {(() => {
+        const pct = dailyGoal > 0 ? (todaySpend / dailyGoal) * 100 : 0
+        const isOver  = pct > 100
+        const isLimit = pct >= 85 && pct <= 100   // chegando ou exatamente no limite
+        const color = isOver ? {
+          bar: 'bg-red-500', text: 'text-red-400', border: 'border-red-500/20',
+          bg: 'bg-red-500/8', label: 'Acima da meta', icon: '🔴'
+        } : isLimit ? {
+          bar: 'bg-orange-500', text: 'text-orange-400', border: 'border-white/8',
+          bg: 'bg-dark-700', label: 'No limite', icon: '⚡'
+        } : {
+          bar: 'bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500/20',
+          bg: 'bg-emerald-500/8', label: todaySpend === 0 ? 'Sem gastos hoje' : 'Dentro da meta', icon: '🟢'
+        }
+        return (
+          <Link to="/daily"
+            className={`block px-4 py-3.5 rounded-xl border ${color.bg} ${color.border}
+                        transition-all active:scale-98`}>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{color.icon}</span>
+                <p className="text-white text-sm font-semibold">Gasto de hoje</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs ${color.text} font-medium`}>{color.label}</span>
+                <ChevronRight size={13} className={color.text} />
+              </div>
+            </div>
+            {/* Barra de progresso */}
+            <div className="h-2 bg-dark-600 rounded-full overflow-hidden mb-2">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${color.bar}`}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
+            </div>
+            {/* Valores */}
+            <div className="flex items-center justify-between">
+              <span className={`text-base font-bold ${color.text}`}>
+                {formatBRL(todaySpend)}
+              </span>
+              <span className="text-gray-500 text-xs">
+                meta {formatBRL(dailyGoal)}/dia
+              </span>
+            </div>
+          </Link>
+        )
+      })()}
 
       {/* ── 🥈 PENDÊNCIAS ────────────────────────────────────────── */}
       {totalPending > 0 && (
@@ -275,40 +442,47 @@ export default function Dashboard() {
               </div>
             </>
           ) : (
-            <div className="text-center py-6">
-              <p className="text-gray-500 text-sm">Nenhum gasto registrado este mês</p>
-              <p className="text-gray-600 text-xs mt-1">Use o ⚡ para registrar gastos do dia a dia</p>
+            /* Estado vazio — donut neutro com mensagem central */
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={140}>
+                <PieChart>
+                  <Pie
+                    data={[{ value: 1 }]}
+                    cx="50%" cy="50%"
+                    innerRadius={45} outerRadius={68}
+                    dataKey="value" strokeWidth={0}
+                  >
+                    <Cell fill="#1f2937" />
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <p className="text-gray-500 text-xs text-center leading-tight">
+                  Sem gastos<br/>registrados
+                </p>
+              </div>
+              <p className="text-center text-gray-600 text-xs mt-1">
+                Use o ⚡ para registrar seus gastos diários
+              </p>
             </div>
           )}
 
-          {/* Gasto do dia — sempre visível dentro do card */}
-          <div className={`flex items-center justify-between mt-3 pt-3 border-t border-white/6`}>
-            <div className="flex items-center gap-2">
-              <span className="text-base">📅</span>
-              <div>
-                <p className="text-gray-400 text-xs">Gasto hoje</p>
-                <p className={`text-sm font-semibold ${todaySpend > 0 ? 'text-white' : 'text-gray-600'}`}>
-                  {todaySpend > 0 ? formatBRL(todaySpend) : 'Nenhum gasto'}
-                </p>
-              </div>
-            </div>
-            <Link to="/daily"
-              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors">
-              Registrar <ChevronRight size={13} />
-            </Link>
-          </div>
         </div>
       </div>
 
-      {/* ── 🔹 INSIGHT ────────────────────────────────────────────── */}
-      {insight && (
-        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm ${
-          insight.type === 'good' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-300'
-          : insight.type === 'bad' ? 'bg-red-500/8 border-red-500/15 text-red-300'
-          : 'bg-blue-500/8 border-blue-500/15 text-blue-300'
-        }`}>
-          <span className="text-base shrink-0">💡</span>
-          <p className="font-medium">{insight.text}</p>
+      {/* ── 🔹 MENSAGENS INTELIGENTES (max 2, ou 1 se pendências visíveis) ── */}
+      {smartMessages.length > 0 && (
+        <div className="space-y-2">
+          {smartMessages.map((msg, i) => (
+            <div key={i} className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${
+              msg.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-300'
+              : msg.type === 'warning' ? 'bg-red-500/8 border-red-500/15 text-red-300'
+              : 'bg-blue-500/8 border-blue-500/15 text-blue-300'
+            }`}>
+              <span className="text-base shrink-0">💡</span>
+              <p className="font-medium leading-snug">{msg.text}</p>
+            </div>
+          ))}
         </div>
       )}
 

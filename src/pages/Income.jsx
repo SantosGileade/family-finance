@@ -110,7 +110,7 @@ export default function Income() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="page-title">Renda 💵</h1>
+          <h1 className="page-title">Renda</h1>
           <p className="text-gray-500 text-sm">{t('Income · Entradas de dinheiro')}</p>
         </div>
         <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
