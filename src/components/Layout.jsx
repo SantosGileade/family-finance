@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import BalanceBar from './BalanceBar'
@@ -35,14 +35,16 @@ function PlanBanner() {
 
 export default function Layout() {
   const { isPlanActive } = usePlanGate()
+  const location = useLocation()
+  const isHome = location.pathname === '/'
 
   return (
     <div className="flex h-screen bg-dark-800 overflow-hidden flex-col">
       {/* Banner suave para plano inativo */}
       {!isPlanActive && <PlanBanner />}
 
-      {/* Balance bar - visible on all pages */}
-      <BalanceBar />
+      {/* Balance bar — oculto no Dashboard (o saldo já aparece no conteúdo da Home) */}
+      {!isHome && <BalanceBar />}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar - visible on desktop */}
