@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import BackButton from '../components/BackButton'
 import { Upload, FileText, ChevronRight, ChevronLeft, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { addIncome, addExpense } from '../lib/supabase'
@@ -301,7 +302,10 @@ export default function Import() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="page-title">Importar Extrato 📂</h1>
+        <div className="flex items-center gap-2">
+          <BackButton />
+          <h1 className="page-title">Importar Extrato 📂</h1>
+        </div>
         <p className="text-gray-500 text-sm">Importe o CSV do banco e lance tudo de uma vez</p>
       </div>
 

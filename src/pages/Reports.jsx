@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import BackButton from '../components/BackButton'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react'
 import MonthPicker from '../components/MonthPicker'
@@ -115,10 +116,10 @@ export default function Reports() {
   return (
     <div className="space-y-6 animate-fade-in pb-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <BackButton />
           <h1 className="page-title">Relatório</h1>
-          <p className="text-gray-500 text-sm">Análise completa por categoria</p>
         </div>
         <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>

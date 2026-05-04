@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import BackButton from '../components/BackButton'
 import { Plus, Minus, Trash2, PiggyBank, Loader2, X, Trophy, Star } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePlanGate } from '../contexts/PlanGateContext'
@@ -120,7 +121,10 @@ export default function Savings() {
 
       {/* Header */}
       <div>
-        <h1 className="page-title">Poupança 🐷</h1>
+        <div className="flex items-center gap-2">
+          <BackButton />
+          <h1 className="page-title">Poupança 🐷</h1>
+        </div>
         <p className="text-gray-500 text-sm">Savings · Sua reserva financeira</p>
       </div>
 

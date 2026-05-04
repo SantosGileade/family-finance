@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import BackButton from '../components/BackButton'
 import { Plus, Pencil, Trash2, Loader2, X, Tag, Eye, EyeOff, ChevronRight } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePlanGate } from '../contexts/PlanGateContext'
@@ -254,9 +255,9 @@ export default function Categories() {
 
   return (
     <div className="space-y-6 animate-fade-in pb-6">
-      <div>
+      <div className="flex items-center gap-2">
+        <BackButton />
         <h1 className="page-title">Categorias</h1>
-        <p className="text-gray-500 text-sm">Personalize suas categorias de gastos</p>
       </div>
 
       {/* Categorias padrão */}

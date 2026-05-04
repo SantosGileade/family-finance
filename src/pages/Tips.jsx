@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import BackButton from '../components/BackButton'
 import { Lightbulb, BookOpen, Globe, ChevronDown, ChevronUp, Target, TrendingUp } from 'lucide-react'
 
 const FINANCIAL_VOCAB = [
@@ -162,7 +163,10 @@ export default function Tips() {
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div>
-        <h1 className="page-title">Dicas & Aprendizado 💡</h1>
+        <div className="flex items-center gap-2">
+          <BackButton />
+          <h1 className="page-title">Dicas & Aprendizado 💡</h1>
+        </div>
         <p className="text-gray-500 text-sm">Tips & Learning · Inglês + Finanças</p>
       </div>
 
