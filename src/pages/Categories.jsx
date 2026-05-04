@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { usePlanGate } from '../contexts/PlanGateContext'
 import {
   getUserCategories, addUserCategory, updateUserCategory, deleteUserCategory,
-  updateHiddenCategories, getCategoryLimits, upsertCategoryLimit,
+  updateHiddenCategories, getCategoryLimits, upsertCategoryLimit, getIncome,
 } from '../lib/supabase'
 import ConfirmDialog from '../components/ConfirmDialog'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
@@ -14,20 +14,31 @@ const formatBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'curren
 
 // ── Modal de limite de gasto por categoria ──────────────────────────
 function LimitModal({ category, currentLimit, onSave, onClose, income }) {
-  const [type, setType]   = useState(currentLimit?.limit_type || 'none')
-  const [value, setValue] = useState(
-    currentLimit?.limit_type === 'value'
-      ? String(Math.round((currentLimit?.limit_value || 0) * 100))
-      : String(currentLimit?.limit_value || '')
+  // Inicializa com o valor atual (qualquer tipo anterior vira 'value')
+  const initValue = currentLimit?.limit_type === 'value'
+    ? String(Math.round((currentLimit?.limit_value || 0) * 100))
+    : currentLimit?.limit_type === 'percentage' && income > 0
+      ? String(Math.round(income * (currentLimit.limit_value || 0) / 100 * 100))
+      : ''
+
+  const [value,   setValue]   = useState(initValue)
+  const [hasLimit, setHasLimit] = useState(
+    !!currentLimit && currentLimit.limit_type !== 'none'
   )
   const [saving, setSaving] = useState(false)
 
-  const suggestion = income > 0 ? Math.round(income * 0.3) : null
+  const numVal = parseCurrency(value)
+  const pctOfIncome = income > 0 && numVal > 0
+    ? ((numVal / income) * 100).toFixed(1)
+    : null
 
   const handleSave = async () => {
     setSaving(true)
-    const numVal = type === 'value' ? parseCurrency(value) : parseFloat(value) || 0
-    await onSave(type, numVal)
+    if (!hasLimit) {
+      await onSave('none', 0)
+    } else {
+      await onSave('value', numVal)
+    }
     setSaving(false)
     onClose()
   }
@@ -38,86 +49,54 @@ function LimitModal({ category, currentLimit, onSave, onClose, income }) {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-white font-semibold">{category.emoji || '🏷️'} {category.label || category.name}</h2>
-            <p className="text-gray-500 text-xs mt-0.5">Configurar limite de gastos</p>
+            <p className="text-gray-500 text-xs mt-0.5">Limite de gastos mensais</p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={20} /></button>
         </div>
 
-        {/* Opções de tipo */}
-        <div className="space-y-2 mb-5">
-          {[
-            { key: 'none',       label: 'Sem limite',            desc: 'Sem controle de gastos nessa categoria' },
-            { key: 'value',      label: 'Definir valor',         desc: 'Limite em reais por mês'                },
-            { key: 'percentage', label: 'Definir por porcentagem', desc: 'Percentual da renda mensal'           },
-          ].map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => setType(opt.key)}
-              className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
-                type === opt.key
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
-                  : 'bg-dark-600 border-white/8 hover:border-white/20'
-              }`}
-            >
-              <div className={`w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center ${
-                type === opt.key ? 'border-emerald-400' : 'border-gray-600'
-              }`}>
-                {type === opt.key && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
-              </div>
-              <div>
-                <p className={`text-sm font-medium ${type === opt.key ? 'text-emerald-300' : 'text-gray-300'}`}>
-                  {opt.label}
-                </p>
-                <p className="text-gray-500 text-xs mt-0.5">{opt.desc}</p>
-              </div>
-            </button>
-          ))}
+        {/* Toggle: com ou sem limite */}
+        <div className="flex gap-2 mb-5">
+          <button
+            onClick={() => setHasLimit(false)}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+              !hasLimit ? 'bg-dark-500 border-white/20 text-white' : 'bg-dark-600 border-white/8 text-gray-400'
+            }`}
+          >
+            Sem limite
+          </button>
+          <button
+            onClick={() => { setHasLimit(true) }}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+              hasLimit ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300' : 'bg-dark-600 border-white/8 text-gray-400'
+            }`}
+          >
+            Definir limite
+          </button>
         </div>
 
-        {/* Input de valor */}
-        {type === 'value' && (
-          <div className="mb-4">
-            <label className="label">Valor limite (R$/mês)</label>
+        {/* Campo de valor */}
+        {hasLimit && (
+          <div className="mb-5">
+            <label className="label">Valor limite por mês (R$)</label>
             <CurrencyInput
-              className="input-field"
+              className="input-field text-lg font-semibold"
               value={value}
               onChange={setValue}
               placeholder="0,00"
               autoFocus
             />
-            {suggestion && (
-              <p className="text-gray-500 text-xs mt-1.5">
-                💡 Sugestão: {formatBRL(suggestion)} (30% da sua renda)
+            {/* Porcentagem calculada automaticamente */}
+            {pctOfIncome && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="text-emerald-400 text-xs font-medium">≈ {pctOfIncome}%</span>
+                <span className="text-gray-500 text-xs">da sua renda deste mês</span>
+              </div>
+            )}
+            {!pctOfIncome && income === 0 && (
+              <p className="text-gray-600 text-xs mt-1.5">
+                Adicione sua renda para ver a porcentagem
               </p>
             )}
-          </div>
-        )}
-
-        {/* Input de porcentagem */}
-        {type === 'percentage' && (
-          <div className="mb-4">
-            <label className="label">Porcentagem da renda (%)</label>
-            <div className="relative">
-              <input
-                type="text"
-                inputMode="numeric"
-                className="input-field pr-8"
-                placeholder="Ex: 20"
-                value={value}
-                onChange={e => setValue(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
-                autoFocus
-                style={{ fontSize: 16 }}
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">%</span>
-            </div>
-            {income > 0 && value && (
-              <p className="text-gray-500 text-xs mt-1.5">
-                = {formatBRL(income * (parseFloat(value) || 0) / 100)} por mês
-              </p>
-            )}
-            <p className="text-gray-500 text-xs mt-1">
-              💡 Sugestão: 30% da renda
-            </p>
           </div>
         )}
 
@@ -125,7 +104,7 @@ function LimitModal({ category, currentLimit, onSave, onClose, income }) {
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
           <button
             onClick={handleSave}
-            disabled={saving || (type !== 'none' && !value)}
+            disabled={saving || (hasLimit && !numVal)}
             className="btn-primary flex-1"
           >
             {saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : 'Salvar limite'}
@@ -151,10 +130,11 @@ export default function Categories() {
   const { user, profile } = useAuth()
   const { check } = usePlanGate()
 
-  const [hidden,  setHidden]  = useState([])
-  const [custom,  setCustom]  = useState([])
-  const [limits,  setLimits]  = useState({})   // { label: { limit_type, limit_value } }
-  const [loading, setLoading] = useState(true)
+  const [hidden,       setHidden]       = useState([])
+  const [custom,       setCustom]       = useState([])
+  const [limits,       setLimits]       = useState({})
+  const [monthIncome,  setMonthIncome]  = useState(0)
+  const [loading,      setLoading]      = useState(true)
 
   const [showCatModal,   setShowCatModal]   = useState(false)
   const [showLimitModal, setShowLimitModal] = useState(false)
@@ -162,7 +142,7 @@ export default function Categories() {
   const [limitTarget,    setLimitTarget]    = useState(null)  // categoria sendo editada no limit modal
   const [confirmId,      setConfirmId]      = useState(null)
   const [saving,         setSaving]         = useState(false)
-  const [form, setForm] = useState({ name: '', emoji: '📌' })
+  const [form, setForm] = useState({ name: '', emoji: '📌', limitValue: '' })
 
   useEffect(() => {
     if (profile?.hidden_categories) setHidden(profile.hidden_categories)
@@ -170,14 +150,18 @@ export default function Categories() {
 
   const load = async () => {
     setLoading(true)
-    const [catRes, limRes] = await Promise.all([
+    const now = new Date()
+    const [catRes, limRes, incRes] = await Promise.all([
       getUserCategories(user.id),
       getCategoryLimits(user.id),
+      getIncome(user.id, now.getMonth() + 1, now.getFullYear()),
     ])
     setCustom(catRes.data || [])
     const limMap = {}
     ;(limRes.data || []).forEach(l => { limMap[l.category_label] = l })
     setLimits(limMap)
+    const totalInc = (incRes.data || []).reduce((s, i) => s + Number(i.amount), 0)
+    setMonthIncome(totalInc)
     setLoading(false)
   }
 
@@ -213,14 +197,19 @@ export default function Categories() {
   const openAdd = () => {
     if (!check()) return
     setEditingItem(null)
-    setForm({ name: '', emoji: '📌' })
+    setForm({ name: '', emoji: '📌', limitValue: '' })
     setShowCatModal(true)
   }
 
   const openEdit = (item) => {
     if (!check()) return
     setEditingItem(item)
-    setForm({ name: item.name, emoji: item.emoji })
+    // Pré-preenche o limite se existir
+    const existingLimit = limits[item.name]
+    const preLimit = existingLimit?.limit_type === 'value'
+      ? String(Math.round((existingLimit.limit_value || 0) * 100))
+      : ''
+    setForm({ name: item.name, emoji: item.emoji, limitValue: preLimit })
     setShowCatModal(true)
   }
 
@@ -228,13 +217,27 @@ export default function Categories() {
     e.preventDefault()
     if (!form.name.trim()) return
     setSaving(true)
+    let savedId = editingItem?.id
+
     if (editingItem) {
       const { data } = await updateUserCategory(editingItem.id, { name: form.name.trim(), emoji: form.emoji })
       if (data?.[0]) setCustom(prev => prev.map(c => c.id === editingItem.id ? data[0] : c))
     } else {
       const { data } = await addUserCategory({ user_id: user.id, name: form.name.trim(), emoji: form.emoji })
-      if (data?.[0]) setCustom(prev => [...prev, data[0]])
+      if (data?.[0]) {
+        setCustom(prev => [...prev, data[0]])
+        savedId = data[0].id
+      }
     }
+
+    // Salva o limite se foi definido
+    const limitVal = parseCurrency(form.limitValue)
+    const catLabel = form.name.trim()
+    if (limitVal > 0) {
+      await upsertCategoryLimit(user.id, catLabel, 'value', limitVal)
+      setLimits(prev => ({ ...prev, [catLabel]: { limit_type: 'value', limit_value: limitVal } }))
+    }
+
     setSaving(false)
     setShowCatModal(false)
     setEditingItem(null)
@@ -389,7 +392,7 @@ export default function Categories() {
           currentLimit={limits[limitTarget.label || limitTarget.name]}
           onSave={handleSaveLimit}
           onClose={() => { setShowLimitModal(false); setLimitTarget(null) }}
-          income={profile?.monthly_income || 0}
+          income={monthIncome}
         />
       )}
 
@@ -423,6 +426,26 @@ export default function Categories() {
                   ))}
                 </div>
               </div>
+              {/* Limite mensal — opcional, discreto */}
+              <div className="border-t border-white/6 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-gray-500 text-xs">Limite mensal <span className="text-gray-600">(opcional)</span></p>
+                  {form.limitValue && parseCurrency(form.limitValue) > 0 && monthIncome > 0 && (
+                    <span className="text-emerald-400 text-xs">
+                      ≈ {((parseCurrency(form.limitValue) / monthIncome) * 100).toFixed(1)}% da renda
+                    </span>
+                  )}
+                </div>
+                <CurrencyInput
+                  className="w-full bg-dark-600/60 border border-white/8 rounded-xl px-3 py-2
+                             text-white text-sm placeholder-gray-600
+                             focus:outline-none focus:border-emerald-500/40 transition-all"
+                  value={form.limitValue}
+                  onChange={v => setForm({ ...form, limitValue: v })}
+                  placeholder="Sem limite"
+                />
+              </div>
+
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowCatModal(false)} className="btn-secondary flex-1">Cancelar</button>
                 <button type="submit" disabled={saving || !form.name.trim()} className="btn-primary flex-1">
