@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Target, Loader2, X, TrendingDown } from 'lucide-react'
+import { Plus, Trash2, Target, Loader2, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses, getUserCategories } from '../lib/supabase'
 import { DEFAULT_CATEGORIES } from '../data/defaultCategories'
@@ -27,10 +27,12 @@ export default function DailySpending() {
   const [dailyGoal,      setDailyGoal]      = useState(30)
   const [spendingTags,   setSpendingTags]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [selectedDay, setSelectedDay] = useState(null)
-  const [confirmId, setConfirmId] = useState(null)
+  const [showModal,    setShowModal]    = useState(false)
+  const [saving,       setSaving]       = useState(false)
+  const [selectedDay,  setSelectedDay]  = useState(null)   // dia clicado no calendário
+  const [showDayModal, setShowDayModal] = useState(false)  // modal com gastos do dia
+  const [showAllItems, setShowAllItems] = useState(false)  // expandir lista
+  const [confirmId,    setConfirmId]    = useState(null)
 
   const [form, setForm] = useState({
     description: '',
@@ -181,136 +183,219 @@ export default function DailySpending() {
         </div>
       </div>
 
-      {/* Add button */}
-      <button onClick={() => { if (!check()) return; openModal(todayStr) }} className="btn-primary w-full">
-        <Plus size={18} /> {t("Registrar gasto de hoje · Add today's spending")}
-      </button>
+      {/* ── INSIGHT RÁPIDO ─────────────────────────────────────── */}
+      {items.length > 0 && (() => {
+        const daysOnTarget = Object.keys(byDate).filter(d => dayTotal(d) <= dailyGoal).length
+        const daysOver     = Object.keys(byDate).filter(d => dayTotal(d) > dailyGoal).length
+        const total = daysOnTarget + daysOver
+        let text, color
+        if (daysOver === 0)
+          { text = `Todos os ${total} dias dentro da meta! 🎉`; color = 'text-emerald-400' }
+        else if (daysOnTarget >= daysOver)
+          { text = `${daysOnTarget} de ${total} dias dentro da meta 💪`; color = 'text-emerald-400' }
+        else
+          { text = `${daysOver} de ${total} dias acima da meta — atenção!`; color = 'text-yellow-400' }
+        return (
+          <div className="px-4 py-2.5 rounded-xl bg-dark-700 border border-white/6 flex items-center gap-2">
+            <span className="text-sm">📊</span>
+            <p className={`text-xs font-medium ${color}`}>{text}</p>
+          </div>
+        )
+      })()}
 
-      {/* Calendar */}
+      {/* ── CALENDÁRIO ─────────────────────────────────────────── */}
       <div className="card">
-        <p className="section-title mb-4">{t('Calendário · Calendar')}</p>
-        <div className="grid grid-cols-7 gap-1 mb-2">
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
-            <p key={d} className="text-center text-gray-600 text-xs font-medium py-1">{d}</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="section-title mb-0">{t('Calendário · Calendar')}</p>
+          {/* Botão + pequeno dentro do cabeçalho */}
+          <button
+            onClick={() => { if (!check()) return; openModal(todayStr) }}
+            className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25
+                       border border-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium
+                       transition-all active:scale-95"
+          >
+            <Plus size={12} /> Registrar
+          </button>
+        </div>
+
+        {/* Dias da semana */}
+        <div className="grid grid-cols-7 gap-0.5 mb-1">
+          {['D','S','T','Q','Q','S','S'].map((d, i) => (
+            <p key={i} className="text-center text-gray-600 text-[10px] font-medium py-0.5">{d}</p>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1">
+
+        {/* Grade */}
+        <div className="grid grid-cols-7 gap-0.5">
           {calDays.map((day, i) => {
             if (!day) return <div key={`empty-${i}`} />
             const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const total = dayTotal(dateStr)
-            const isToday = dateStr === todayStr
+            const total   = dayTotal(dateStr)
+            const isToday  = dateStr === todayStr
             const isFuture = new Date(dateStr) > new Date()
             return (
               <button
                 key={dateStr}
-                onClick={() => !isFuture && (setSelectedDay(selectedDay === dateStr ? null : dateStr))}
+                onClick={() => {
+                  if (isFuture) return
+                  setSelectedDay(dateStr)
+                  setShowDayModal(true)
+                }}
                 disabled={isFuture}
                 className={`
-                  aspect-square rounded-lg flex flex-col items-center justify-center p-0.5 transition-all text-xs
-                  ${isFuture ? 'opacity-20 cursor-default' : 'hover:scale-105 cursor-pointer'}
-                  ${isToday ? 'ring-2 ring-emerald-500' : ''}
-                  ${total > 0 ? getDayColor(dateStr) : 'bg-dark-600 text-gray-600 hover:bg-dark-500'}
+                  aspect-square rounded-md flex flex-col items-center justify-center transition-all text-xs
+                  ${isFuture ? 'opacity-20 cursor-default' : 'active:scale-95 cursor-pointer'}
+                  ${isToday ? 'ring-1 ring-emerald-500' : ''}
+                  ${total > 0 ? getDayColor(dateStr) : 'bg-dark-600/60 text-gray-600'}
                 `}
               >
-                <span className="font-semibold">{day}</span>
+                <span className="font-semibold text-[11px]">{day}</span>
                 {total > 0 && (
-                  <span className="text-[9px] leading-tight">
-                    {parseFloat(total.toFixed(2))}
+                  <span className="text-[8px] leading-none opacity-80 mt-0.5">
+                    {total >= 100 ? `${(total/100).toFixed(1)}k` : total.toFixed(0)}
                   </span>
                 )}
               </button>
             )
           })}
         </div>
-        <div className="flex gap-4 mt-3 flex-wrap">
-          {[
-            { color: 'bg-emerald-500/30 border border-emerald-500/50', label: t(`≤ R$${dailyGoal} · On target`) },
-            { color: 'bg-yellow-500/30 border border-yellow-500/50', label: t('Um pouco alto · A bit high') },
-            { color: 'bg-red-500/30 border border-red-500/50', label: t('Acima · Over budget') },
-          ].map(({ color, label }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className={`w-3 h-3 rounded ${color}`} />
-              <span className="text-gray-500 text-xs">{label}</span>
-            </div>
-          ))}
+
+        {/* Legenda clara */}
+        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/6 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40 border border-emerald-500/60" />
+            <span className="text-gray-500 text-[10px]">Dentro da meta</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm bg-yellow-500/40 border border-yellow-500/60" />
+            <span className="text-gray-500 text-[10px]">Próximo ao limite</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm bg-red-500/40 border border-red-500/60" />
+            <span className="text-gray-500 text-[10px]">Passou da meta</span>
+          </div>
         </div>
       </div>
 
-      {/* Day detail */}
-      {selectedDay && byDate[selectedDay] && (
-        <div className="card border border-white/10">
-          <p className="section-title">
-            {t(`Gastos de ${selectedDay} · Spending on ${selectedDay}`)}
-          </p>
-          <div className="space-y-2">
-            {byDate[selectedDay].map(item => (
-              <div key={item.id} className="flex items-center gap-3 bg-dark-600 rounded-xl p-3">
-                <div className="flex-1">
-                  <p className="text-white text-sm">{item.description}</p>
-                </div>
-                <p className="text-red-400 font-semibold">{formatBRL(item.amount)}</p>
-                <button onClick={() => handleDelete(item.id)} className="btn-danger p-1.5">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            <p className="text-right text-gray-400 text-sm font-semibold pt-2 border-t border-white/5">
-              Total: <span className="text-white">{formatBRL(dayTotal(selectedDay))}</span>
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Recent */}
+      {/* ── ÚLTIMOS GASTOS (só 3, expandível) ──────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="section-title mb-0">{t('Últimos gastos · Recent')}</p>
+          <p className="section-title mb-0">Últimos gastos</p>
           <span className="text-gray-500 text-xs">Total: {formatBRL(totalMonth)}</span>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center justify-center py-8">
+            <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : items.length === 0 ? (
           <div className="card text-center py-8">
             <Target size={36} className="text-gray-600 mx-auto mb-2" />
             <p className="text-gray-400 text-sm">Nenhum gasto registrado</p>
-            {isAdmin && <p className="text-gray-600 text-xs mt-1">No spending recorded this month</p>}
           </div>
         ) : (
-          <div className="space-y-2">
-            {items.slice(0, 15).map(item => (
-              <div key={item.id} className="card-hover flex items-center gap-3 p-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${
-                  item.payment_method === 'credit_card'
-                    ? 'bg-blue-500/15 text-blue-400'
-                    : 'bg-dark-600 text-gray-400'
-                }`}>
-                  {item.payment_method === 'credit_card' ? '💳' : '💵'}
+          <>
+            <div className="space-y-2">
+              {(showAllItems ? items : items.slice(0, 3)).map(item => (
+                <div key={item.id} className="card-hover flex items-center gap-3 p-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${
+                    item.payment_method === 'credit_card' ? 'bg-blue-500/15' : 'bg-dark-600'
+                  }`}>
+                    {item.payment_method === 'credit_card' ? '💳' : '💵'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm truncate">{item.description}</p>
+                    <p className="text-gray-500 text-xs">{item.date}</p>
+                  </div>
+                  <p className="text-red-400 font-semibold shrink-0 text-sm">{formatBRL(item.amount)}</p>
+                  <button onClick={() => setConfirmId(item.id)} className="btn-danger shrink-0">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm truncate">{item.description}</p>
-                  <p className="text-gray-500 text-xs">{item.date}</p>
-                </div>
-                <p className="text-red-400 font-semibold shrink-0">{formatBRL(item.amount)}</p>
-                <button onClick={() => setConfirmId(item.id)} className="btn-danger shrink-0">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            {items.length > 3 && (
+              <button
+                onClick={() => setShowAllItems(v => !v)}
+                className="w-full mt-2 py-2 text-xs text-gray-400 hover:text-white
+                           bg-dark-700 hover:bg-dark-600 border border-white/6
+                           rounded-xl transition-all"
+              >
+                {showAllItems ? 'Mostrar menos' : `Ver todos (${items.length})`}
+              </button>
+            )}
+          </>
         )}
       </div>
 
-      {/* Confirm delete */}
+      {/* ── CONFIRM DELETE ─────────────────────────────────────── */}
       {confirmId && (
         <ConfirmDialog
           message="Esse gasto diário será removido permanentemente."
           onConfirm={() => handleDelete(confirmId)}
           onCancel={() => setConfirmId(null)}
         />
+      )}
+
+      {/* ── MODAL: GASTOS DO DIA ───────────────────────────────── */}
+      {showDayModal && selectedDay && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          onClick={() => setShowDayModal(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full sm:max-w-sm bg-dark-700 rounded-t-3xl sm:rounded-2xl
+                          border border-white/10 shadow-2xl z-10 animate-slide-up px-5 pt-4 pb-8"
+            onClick={e => e.stopPropagation()}>
+            {/* Handle */}
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4 sm:hidden" />
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-white font-semibold">
+                  {new Date(selectedDay + 'T12:00:00').toLocaleDateString('pt-BR', {
+                    weekday: 'long', day: 'numeric', month: 'long'
+                  })}
+                </p>
+                <p className={`text-xs mt-0.5 font-semibold ${
+                  dayTotal(selectedDay) <= dailyGoal ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  Total: {formatBRL(dayTotal(selectedDay))}
+                  {dayTotal(selectedDay) <= dailyGoal ? ' ✓ Dentro da meta' : ' · Acima da meta'}
+                </p>
+              </div>
+              <button onClick={() => setShowDayModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-dark-600 text-gray-400 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+            {/* Lista */}
+            {byDate[selectedDay]?.length > 0 ? (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {byDate[selectedDay].map(item => (
+                  <div key={item.id} className="flex items-center gap-3 bg-dark-600 rounded-xl p-3">
+                    <span className="text-sm">{item.payment_method === 'credit_card' ? '💳' : '💵'}</span>
+                    <p className="flex-1 text-white text-sm truncate">{item.description}</p>
+                    <p className="text-red-400 font-semibold text-sm">{formatBRL(item.amount)}</p>
+                    <button onClick={() => { handleDelete(item.id); if (byDate[selectedDay]?.length <= 1) setShowDayModal(false) }}
+                      className="text-gray-500 hover:text-red-400 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm text-center py-6">Nenhum gasto registrado neste dia</p>
+            )}
+            {/* Botão adicionar neste dia */}
+            <button
+              onClick={() => { setShowDayModal(false); if (!check()) return; openModal(selectedDay) }}
+              className="w-full mt-4 flex items-center justify-center gap-2 py-2.5
+                         bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30
+                         text-emerald-400 text-sm font-medium rounded-xl transition-all"
+            >
+              <Plus size={15} /> Adicionar gasto neste dia
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Modal */}
