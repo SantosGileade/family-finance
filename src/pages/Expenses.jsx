@@ -244,12 +244,13 @@ export default function Expenses() {
   const filteredExpenses = tab === 'all' ? items : items.filter(i => i.category === tab)
 
   const totalFixed = items.filter(i => i.category === 'fixed').reduce((s, i) => s + Number(i.amount), 0)
+  // Gastos diários (débito/dinheiro) contam como variáveis
   const totalVar = items.filter(i => i.category === 'variable').reduce((s, i) => s + Number(i.amount), 0)
+                 + dailyCashItems.reduce((s, i) => s + Number(i.amount), 0)
   const totalCardExp = items.filter(i => i.category === 'credit_card').reduce((s, i) => s + Number(i.amount), 0)
   const totalCardDaily = dailyCardItems.reduce((s, i) => s + Number(i.amount), 0)
   const totalCard = totalCardExp + totalCardDaily
-  const totalDailyCash = dailyCashItems.reduce((s, i) => s + Number(i.amount), 0)
-  const totalAll = totalFixed + totalVar + totalCard + totalDailyCash
+  const totalAll = totalFixed + totalVar + totalCard  // totalVar já inclui dailyCash
 
   const totalsMap = { all: totalAll, fixed: totalFixed, variable: totalVar, credit_card: totalCard }
 
@@ -332,8 +333,9 @@ export default function Expenses() {
         <div className="flex items-center justify-center py-12">
           <div className="w-6 h-6 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : (tab !== 'credit_card' && filteredExpenses.length === 0) ||
-         (tab === 'credit_card' && filteredExpenses.length === 0 && dailyCardItems.length === 0) ? (
+      ) : (tab === 'variable'    && filteredExpenses.length === 0 && dailyCashItems.length === 0) ||
+           (tab === 'credit_card'  && filteredExpenses.length === 0 && dailyCardItems.length === 0) ||
+           (tab !== 'variable' && tab !== 'credit_card' && filteredExpenses.length === 0) ? (
         <div className="card text-center py-10">
           <Receipt size={40} className="text-gray-600 mx-auto mb-3" />
           <p className="text-gray-400 font-medium">Nenhuma despesa registrada</p>
@@ -444,7 +446,7 @@ export default function Expenses() {
           )}
 
           {/* Daily spending items paid by cash/debit (only shown in All tab) */}
-          {tab === 'all' && dailyCashItems.map((item) => (
+          {(tab === 'all' || tab === 'variable') && dailyCashItems.map((item) => (
             <div key={`daily-cash-${item.id}`} className="card-hover flex items-center gap-3 p-3 border border-yellow-500/10">
               <div className="w-10 h-10 bg-yellow-500/15 rounded-xl flex items-center justify-center text-lg shrink-0">
                 📅

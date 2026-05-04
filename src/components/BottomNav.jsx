@@ -97,8 +97,9 @@ export default function BottomNav() {
           {/* Sheet */}
           <div
             className="relative w-full bg-dark-800 rounded-t-3xl border-t border-white/8
-                       shadow-2xl z-10 animate-slide-up"
+                       shadow-2xl z-10 animate-slide-up select-none"
             onClick={e => e.stopPropagation()}
+            style={{ WebkitTapHighlightColor: 'transparent' }}
           >
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-1">
@@ -123,8 +124,9 @@ export default function BottomNav() {
                   key={to}
                   onClick={() => handleSheetNav(to)}
                   className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl
-                             bg-dark-700/60 hover:bg-dark-600 active:scale-98
+                             bg-dark-700/60 active:bg-dark-600 active:scale-98
                              border border-white/5 transition-all duration-150 text-left"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
                 >
                   <div className="w-10 h-10 bg-emerald-500/15 rounded-xl flex items-center justify-center shrink-0">
                     <Icon size={18} className="text-emerald-400" />

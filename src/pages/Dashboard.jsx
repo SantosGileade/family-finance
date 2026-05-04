@@ -416,7 +416,9 @@ export default function Dashboard() {
                   </Pie>
                   <Tooltip
                     formatter={v => [formatBRL(v), '']}
-                    contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '12px' }}
+                    contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#f9fafb' }}
+                    itemStyle={{ color: '#e5e7eb' }}
+                    labelStyle={{ color: '#9ca3af' }}
                   />
                 </PieChart>
               </ResponsiveContainer>

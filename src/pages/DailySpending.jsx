@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Target, Loader2, X, TrendingDown } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses } from '../lib/supabase'
+import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses, getUserCategories } from '../lib/supabase'
+import { DEFAULT_CATEGORIES } from '../data/defaultCategories'
 import MonthPicker from '../components/MonthPicker'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -14,21 +15,17 @@ const formatBRL = (v) =>
 
 // dailyGoal é calculado dinamicamente por usuário (ver state abaixo)
 
-const SPENDING_TAGS = [
-  '🍔 Lanche', '🛒 Mercado', '🚌 Transporte', '☕ Café',
-  '💊 Farmácia', '🎮 Lazer', '👕 Roupa', '⛽ Combustível', '🍕 Delivery', '💈 Barbearia', '🎁 Presente', '📱 App', '🏪 Loja',
-]
-
 export default function DailySpending() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, profile } = useAuth()
   const { check } = usePlanGate()
   const t = useLang()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
 
-  const [items, setItems] = useState([])
-  const [dailyGoal, setDailyGoal] = useState(30)
+  const [items,          setItems]          = useState([])
+  const [dailyGoal,      setDailyGoal]      = useState(30)
+  const [spendingTags,   setSpendingTags]   = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -63,6 +60,21 @@ export default function DailySpending() {
   }
 
   useEffect(() => { load() }, [month, year])
+
+  // Carrega as categorias do usuário (padrão filtradas + personalizadas)
+  useEffect(() => {
+    if (!user) return
+    const hidden = profile?.hidden_categories || []
+    // Padrão — filtra ocultas
+    const visibleDefaults = DEFAULT_CATEGORIES
+      .filter(c => !hidden.includes(c.label))
+      .map(c => `${c.emoji} ${c.label}`)
+    // Personalizadas
+    getUserCategories(user.id).then(({ data }) => {
+      const custom = (data || []).map(c => `${c.emoji} ${c.name}`)
+      setSpendingTags([...visibleDefaults, ...custom])
+    })
+  }, [user, profile])
 
   const handleAdd = async (e) => {
     e.preventDefault()
@@ -322,14 +334,18 @@ export default function DailySpending() {
                   onChange={e => setForm({ ...form, description: e.target.value })}
                   required
                 />
-                {/* Quick tags */}
+                {/* Quick tags — categorias do usuário */}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {SPENDING_TAGS.map(tag => (
+                  {spendingTags.map(tag => (
                     <button
                       key={tag}
                       type="button"
                       onClick={() => setForm({ ...form, description: tag })}
-                      className="px-2 py-1 bg-dark-600 hover:bg-dark-500 text-gray-300 text-xs rounded-lg transition-all"
+                      className={`px-2.5 py-1 text-xs rounded-lg transition-all border ${
+                        form.description === tag
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                          : 'bg-dark-600 border-white/6 hover:bg-dark-500 text-gray-300'
+                      }`}
                     >
                       {tag}
                     </button>

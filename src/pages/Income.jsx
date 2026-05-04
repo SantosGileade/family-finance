@@ -182,33 +182,37 @@ export default function Income() {
         )}
       </div>
 
-      {/* 50/30/20 insight */}
+      {/* Potencial de economia — substitui o 50/30/20 */}
       {total > 0 && (
-        <div className="card border border-blue-500/20">
-          <p className="text-blue-400 font-semibold text-sm mb-3">
-            💡 {t('Regra 50/30/20 · 50/30/20 Rule')}
+        <div className="card border border-emerald-500/15">
+          <p className="text-white font-semibold text-sm mb-1">🌱 Comece pequeno</p>
+          <p className="text-gray-500 text-xs mb-4">
+            Você não precisa guardar 20% agora. Qualquer valor guardado já é progresso real.
           </p>
-          <p className="text-gray-500 text-xs mb-3">
-            Uma forma inteligente de dividir sua renda de <span className="text-white">{formatBRL(total)}</span>:
-          </p>
-          <div className="space-y-2">
+
+          {/* Metas escalonadas */}
+          <div className="space-y-3">
             {[
-              { pct: 50, label: t('Necessidades · Needs'), color: 'bg-blue-500', hint: 'Aluguel, mercado, contas' },
-              { pct: 30, label: t('Desejos · Wants'), color: 'bg-yellow-500', hint: 'Lazer, roupas, restaurantes' },
-              { pct: 20, label: t('Poupança · Savings'), color: 'bg-emerald-500', hint: 'Guardar para o futuro' },
-            ].map(({ pct, label, color, hint }) => (
-              <div key={pct}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-300">{pct}% — {label}</span>
-                  <span className="text-white font-semibold">{formatBRL(total * pct / 100)}</span>
+              { pct: 1,  label: 'Iniciando',     color: 'bg-emerald-500', tip: 'O primeiro passo importa mais que o tamanho.' },
+              { pct: 5,  label: 'Construindo',   color: 'bg-blue-500',    tip: 'Hábito formado. Já dá pra sentir a diferença.' },
+              { pct: 10, label: 'Crescendo',      color: 'bg-purple-500',  tip: 'Dois dígitos. Você está no caminho certo.' },
+            ].map(({ pct, label, color, tip }) => (
+              <div key={pct} className="bg-dark-600/60 rounded-xl px-3 py-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-gray-300 text-xs font-medium">{pct}% — {label}</span>
+                  <span className="text-white text-xs font-bold">{formatBRL(total * pct / 100)}/mês</span>
                 </div>
-                <div className="h-1.5 rounded-full bg-dark-600">
-                  <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                <div className="h-1.5 rounded-full bg-dark-700 overflow-hidden">
+                  <div className={`h-full rounded-full ${color}`} style={{ width: `${pct * 5}%` }} />
                 </div>
-                <p className="text-gray-600 text-xs mt-0.5">{hint}</p>
+                <p className="text-gray-600 text-[10px] mt-1 italic">{tip}</p>
               </div>
             ))}
           </div>
+
+          <p className="text-gray-600 text-xs mt-3 text-center">
+            {formatBRL(total * 0.01)}/mês durante 1 ano = {formatBRL(total * 0.01 * 12)} guardados 💪
+          </p>
         </div>
       )}
 
