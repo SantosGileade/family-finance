@@ -251,8 +251,8 @@ export default function DailySpending() {
               >
                 <span className="font-semibold text-[11px]">{day}</span>
                 {total > 0 && (
-                  <span className="text-[8px] leading-none opacity-80 mt-0.5">
-                    {total >= 1000 ? `${(total/1000).toFixed(1)}k` : total.toFixed(0)}
+                  <span className="text-[7px] leading-none opacity-80 mt-0.5 font-medium">
+                    R${total >= 1000 ? `${(total/1000).toFixed(1)}k` : total.toFixed(0)}
                   </span>
                 )}
               </button>
