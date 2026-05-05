@@ -138,6 +138,222 @@ function autoDetectCols(rows, headerIdx) {
   return { dateCol, descCol, amountCol, inCol, outCol, mode }
 }
 
+// ── Perfis de bancos ─────────────────────────────────────────────────────────
+
+const BANK_PROFILES = [
+  {
+    id: 'nubank_credit',
+    name: 'Nubank',
+    sub: 'Cartão de crédito',
+    logo: '🟣',
+    // Nubank crédito: headers ingleses date,title,amount (vírgula)
+    detect: (headers) => {
+      const h = headers.map(s => s.toLowerCase().replace(/"/g, '').trim())
+      return h.includes('date') && (h.includes('title') || h.includes('description')) && h.includes('amount')
+    },
+    colMap: { dateCol: 0, descCol: 1, amountCol: 2, inCol: -1, outCol: -1, mode: 'credit' },
+  },
+  {
+    id: 'nubank_account',
+    name: 'Nubank',
+    sub: 'Conta corrente',
+    logo: '🟣',
+    // Nubank conta: Data,Valor,Identificador,Descrição  ou  Data,Descrição,Valor
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      const hasData = h.some(s => s === 'data')
+      const hasValor = h.some(s => s === 'valor')
+      const hasDesc = h.some(s => s.includes('descri') || s.includes('histor'))
+      return hasData && hasValor && hasDesc && !h.includes('amount')
+    },
+    colMap: null, // usa autoDetect
+  },
+  {
+    id: 'c6_bank',
+    name: 'C6 Bank',
+    sub: 'Extrato',
+    logo: '⬛',
+    // C6 Bank: detecta por nomes de colunas (sem verificar delimitador,
+    // pois os semicolons já foram consumidos pelo parser)
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      const hasData      = h.some(s => s === 'data' || s.startsWith('data'))
+      const hasLanc      = h.some(s => s.includes('lancamento') || s.includes('historico'))
+      const hasSaldo     = h.some(s => s === 'saldo' || s.includes('saldo'))
+      const hasDescricao = h.some(s => s.includes('descri'))
+      return hasData && (hasLanc || hasSaldo || hasDescricao)
+    },
+    colMap: null,
+  },
+  // ── Itaú ─ dual columns Crédito / Débito ──────────────────────────
+  {
+    id: 'itau',
+    name: 'Itaú',
+    sub: 'Conta corrente / poupança',
+    logo: '🟠',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return (h.some(s => s.includes('cred')) && h.some(s => s.includes('deb'))) &&
+             h.some(s => s.includes('historico') || s.includes('lancamento') || s.includes('descri'))
+    },
+    colMap: null,
+  },
+  // ── Bradesco ────────────────────────────────────────────────────────
+  {
+    id: 'bradesco',
+    name: 'Bradesco',
+    sub: 'Extrato',
+    logo: '🔴',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('docto') || s.includes('documento') || s.includes('natureza')) &&
+             h.some(s => s === 'data' || s.startsWith('data'))
+    },
+    colMap: null,
+  },
+  // ── Banco do Brasil ─────────────────────────────────────────────────
+  {
+    id: 'bb',
+    name: 'Banco do Brasil',
+    sub: 'Extrato',
+    logo: '🟡',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('tipo de lancamento') || s.includes('agencia origem') ||
+                         s.includes('tipo lancamento'))
+    },
+    colMap: null,
+  },
+  // ── Caixa Econômica ─────────────────────────────────────────────────
+  {
+    id: 'caixa',
+    name: 'Caixa',
+    sub: 'Extrato',
+    logo: '🔵',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('dependencia') || s.includes('saldo final') ||
+                         s.includes('cod op'))
+    },
+    colMap: null,
+  },
+  // ── Santander ───────────────────────────────────────────────────────
+  {
+    id: 'santander',
+    name: 'Santander',
+    sub: 'Extrato',
+    logo: '🔴',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('data mov') || s === 'movimento' || s.includes('compl')) &&
+             h.some(s => s.includes('valor') || s.includes('val'))
+    },
+    colMap: null,
+  },
+  // ── Banco Inter ─────────────────────────────────────────────────────
+  {
+    id: 'inter',
+    name: 'Banco Inter',
+    sub: 'Extrato',
+    logo: '🟠',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('tipo de operacao') || s.includes('tipo operacao') ||
+                         s.includes('tipo de transacao'))
+    },
+    colMap: null,
+  },
+  // ── Sicoob / Sicredi ────────────────────────────────────────────────
+  {
+    id: 'sicoob',
+    name: 'Sicoob / Sicredi',
+    sub: 'Extrato',
+    logo: '🟢',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('cooperativa') || s.includes('sicoob') ||
+                         s.includes('sicredi') || s.includes('cod transacao'))
+    },
+    colMap: null,
+  },
+  // ── Neon ────────────────────────────────────────────────────────────
+  {
+    id: 'neon',
+    name: 'Neon',
+    sub: 'Extrato',
+    logo: '🌐',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      // Neon tem coluna "Tipo" com valores Débito/Crédito
+      return h.some(s => s === 'tipo') && h.some(s => s === 'data') &&
+             h.some(s => s === 'valor' || s.includes('descri'))
+    },
+    colMap: null,
+  },
+  // ── PicPay ──────────────────────────────────────────────────────────
+  {
+    id: 'picpay',
+    name: 'PicPay',
+    sub: 'Extrato',
+    logo: '💚',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('picpay') || s.includes('tipo de transacao')) ||
+             h.some(s => s === 'status' && h.some(c => c === 'tipo'))
+    },
+    colMap: null,
+  },
+  // ── Mercado Pago ────────────────────────────────────────────────────
+  {
+    id: 'mercadopago',
+    name: 'Mercado Pago',
+    sub: 'Extrato',
+    logo: '🔵',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('mercado') || s.includes('operacao') || s.includes('canal'))
+    },
+    colMap: null,
+  },
+  // ── XP / BTG ────────────────────────────────────────────────────────
+  {
+    id: 'xp_btg',
+    name: 'XP / BTG',
+    sub: 'Extrato',
+    logo: '⚫',
+    detect: (headers) => {
+      const h = headers.map(s => sem(s.replace(/"/g, '')))
+      return h.some(s => s.includes('ativo') || s.includes('produto') || s.includes('financeiro'))
+    },
+    colMap: null,
+  },
+  // ── Genérico ────────────────────────────────────────────────────────
+  {
+    id: 'generic',
+    name: 'Outro banco',
+    sub: 'Formato genérico',
+    logo: '🏦',
+    detect: () => false,
+    colMap: null,
+  },
+]
+
+function detectBank(rows, hIdx) {
+  if (!rows.length) return null
+  // Tenta o hIdx e também as 5 primeiras linhas (para bancos com metadata antes do cabeçalho)
+  const candidates = [...new Set([hIdx, 0, 1, 2, 3, 4])]
+    .map(i => rows[i])
+    .filter(Boolean)
+
+  for (const profile of BANK_PROFILES) {
+    if (profile.id === 'generic') continue
+    for (const headerRow of candidates) {
+      if (profile.detect(headerRow)) return profile
+    }
+  }
+  return null
+}
+
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const EXPENSE_CATS = [
@@ -159,15 +375,17 @@ export default function Import() {
   const { user } = useAuth()
   const fileRef = useRef()
 
-  const [step, setStep] = useState('upload')
-  const [rows, setRows] = useState([])
-  const [fileName, setFileName] = useState('')
-  const [headerIdx, setHeaderIdx] = useState(0)
-  const [colMap, setColMap] = useState({ dateCol: 0, descCol: 1, amountCol: 2, inCol: -1, outCol: -1, mode: 'single' })
-  const [entries, setEntries] = useState([])
-  const [saving, setSaving] = useState(false)
-  const [done, setDone] = useState(null)
-  const [dragOver, setDragOver] = useState(false)
+  const [step,          setStep]          = useState('upload')
+  const [rows,          setRows]          = useState([])
+  const [fileName,      setFileName]      = useState('')
+  const [headerIdx,     setHeaderIdx]     = useState(0)
+  const [colMap,        setColMap]        = useState({ dateCol: 0, descCol: 1, amountCol: 2, inCol: -1, outCol: -1, mode: 'single' })
+  const [entries,       setEntries]       = useState([])
+  const [saving,        setSaving]        = useState(false)
+  const [done,          setDone]          = useState(null)
+  const [dragOver,      setDragOver]      = useState(false)
+  const [detectedBank,  setDetectedBank]  = useState(null)   // perfil detectado
+  const [selectedBank,  setSelectedBank]  = useState(null)   // banco escolhido pelo usuário
 
   const numCols = rows.length > 0 ? Math.max(...rows.slice(0, 15).map(r => r.length)) : 0
   const headerRow = rows[headerIdx] || []
@@ -182,9 +400,28 @@ export default function Import() {
       setRows(parsed)
       const hIdx = findDataStart(parsed)
       setHeaderIdx(hIdx)
-      const det = autoDetectCols(parsed, hIdx)
-      if (det) setColMap(det)
-      setStep('map')
+
+      // Tenta detectar o banco automaticamente
+      const bank = detectBank(parsed, hIdx)
+      setDetectedBank(bank)
+      setSelectedBank(bank)
+
+      // Aplica o colMap do perfil ou usa autoDetect
+      const profileMap = bank?.colMap
+      const autoMap    = autoDetectCols(parsed, hIdx)
+      const finalMap   = profileMap || autoMap || { dateCol: 0, descCol: 1, amountCol: 2, inCol: -1, outCol: -1, mode: 'single' }
+      setColMap(finalMap)
+
+      // Se banco detectado → vai direto para preview (sem tela de configuração)
+      // Se não detectado → vai para seleção de banco (mais simples que tela técnica)
+      if (bank) {
+        // Gera as entradas imediatamente com o colMap detectado
+        const dataRows2 = parsed.slice(hIdx + 1)
+        // (buildEntries usa state, então guardamos para usar após setState)
+        setStep('bank_confirm')
+      } else {
+        setStep('bank_select')
+      }
       setDone(null)
     }
     reader.readAsText(file, 'utf-8')
@@ -342,167 +579,98 @@ export default function Import() {
           </div>
 
           <div className="card border border-blue-500/20 bg-blue-500/5">
-            <p className="text-blue-400 font-semibold text-sm mb-2">💡 Como exportar do seu banco?</p>
+            <p className="text-blue-400 font-semibold text-sm mb-2">💡 Como exportar o extrato?</p>
             <ul className="text-gray-400 text-xs space-y-1.5">
-              <li>• <span className="text-white">C6 Bank:</span> App → Extrato → ícone de compartilhar → Exportar CSV</li>
-              <li>• <span className="text-white">Nubank crédito:</span> Fatura → ícone de compartilhar → CSV (use modo 💳 Crédito)</li>
-              <li>• <span className="text-white">Itaú:</span> Internet Banking → Extrato → Exportar CSV</li>
-              <li>• <span className="text-white">Bradesco:</span> Internet Banking → Extrato → Download CSV</li>
+              <li>• <span className="text-white">Nubank:</span> Fatura → compartilhar → CSV</li>
+              <li>• <span className="text-white">C6 Bank:</span> App → Extrato → compartilhar → CSV</li>
+              <li>• <span className="text-white">Itaú / Bradesco / BB:</span> Internet Banking → Extrato → Exportar CSV</li>
+              <li>• <span className="text-white">Banco Inter:</span> App → Extrato → Exportar</li>
               <li>• <span className="text-white">Caixa:</span> App → Extrato → Compartilhar → CSV</li>
+              <li>• <span className="text-white">Santander / Neon / PicPay:</span> App → Extrato → Exportar CSV</li>
             </ul>
+            <p className="text-gray-600 text-xs mt-2">Suportamos: Nubank, C6, Itaú, Bradesco, BB, Caixa, Santander, Inter, Sicoob, Neon, PicPay, Mercado Pago, XP, BTG e outros</p>
           </div>
         </div>
       )}
 
       {/* ── STEP 2: Map columns ── */}
-      {step === 'map' && (
-        <div className="space-y-4">
+      {/* ── STEP: Banco confirmado automaticamente ── */}
+      {step === 'bank_confirm' && detectedBank && (
+        <div className="space-y-5">
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <FileText size={16} className="text-emerald-400" />
             <span className="text-white font-medium">{fileName}</span>
             <span>— {rows.length} linhas</span>
           </div>
 
-          {/* Header row control */}
-          <div className="card">
-            <p className="text-white font-semibold text-sm mb-3">Cabeçalho detectado</p>
-            <div className="flex items-center gap-3">
-              <label className="text-gray-400 text-sm shrink-0">Linha do cabeçalho:</label>
-              <input
-                type="number" min={0} max={rows.length - 1}
-                value={headerIdx}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  setHeaderIdx(v)
-                  const det = autoDetectCols(rows, v)
-                  if (det) setColMap(det)
-                }}
-                className="input-field w-20 text-center"
-              />
-              <span className="text-gray-500 text-xs">
-                {headerRow.length > 0
-                  ? `"${headerRow.slice(0, 3).join(' | ')}..."`
-                  : 'nenhuma'}
-              </span>
-            </div>
+          <div className="rounded-2xl bg-emerald-500/8 border border-emerald-500/20 p-5 text-center">
+            <span className="text-4xl">{detectedBank.logo}</span>
+            <p className="text-white font-bold text-lg mt-2">{detectedBank.name}</p>
+            <p className="text-gray-400 text-sm">{detectedBank.sub}</p>
+            <p className="text-emerald-400 text-xs mt-1 font-medium">✓ Identificado automaticamente</p>
           </div>
 
-          {/* Amount mode */}
-          <div className="card">
-            <p className="text-white font-semibold text-sm mb-3">Formato do valor</p>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { value: 'single', label: '📊 Valor único', sub: 'Negativo = despesa' },
-                { value: 'dual', label: '📊 Entrada / Saída', sub: 'C6 Bank, Bradesco' },
-                { value: 'credit', label: '💳 Crédito', sub: 'Nubank, positivo = despesa' },
-              ].map(opt => (
-                <button key={opt.value} type="button"
-                  onClick={() => setColMap(c => ({ ...c, mode: opt.value }))}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    colMap.mode === opt.value
-                      ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
-                      : 'border-white/10 bg-dark-600 text-gray-400'
-                  }`}>
-                  <p className="text-sm font-medium">{opt.label}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{opt.sub}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Column mapping */}
-          <div className="card">
-            <p className="text-white font-semibold text-sm mb-3">Mapeamento de colunas</p>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-blue-400 text-xs font-semibold block mb-1">📅 Data</label>
-                  <select className="input-field text-sm" value={colMap.dateCol}
-                    onChange={e => setColMap(c => ({ ...c, dateCol: Number(e.target.value) }))}>
-                    {colOptions('— Ignorar')}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-yellow-400 text-xs font-semibold block mb-1">📝 Descrição</label>
-                  <select className="input-field text-sm" value={colMap.descCol}
-                    onChange={e => setColMap(c => ({ ...c, descCol: Number(e.target.value) }))}>
-                    {colOptions('— Ignorar')}
-                  </select>
-                </div>
-              </div>
-
-              {colMap.mode === 'single' ? (
-                <div>
-                  <label className="text-emerald-400 text-xs font-semibold block mb-1">💰 Valor (positivo = receita, negativo = despesa)</label>
-                  <select className="input-field text-sm" value={colMap.amountCol}
-                    onChange={e => setColMap(c => ({ ...c, amountCol: Number(e.target.value) }))}>
-                    {colOptions()}
-                  </select>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-emerald-400 text-xs font-semibold block mb-1">💚 Entrada / Crédito (receita)</label>
-                    <select className="input-field text-sm" value={colMap.inCol}
-                      onChange={e => setColMap(c => ({ ...c, inCol: Number(e.target.value) }))}>
-                      {colOptions()}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-red-400 text-xs font-semibold block mb-1">🔴 Saída / Débito (despesa)</label>
-                    <select className="input-field text-sm" value={colMap.outCol}
-                      onChange={e => setColMap(c => ({ ...c, outCol: Number(e.target.value) }))}>
-                      {colOptions()}
-                    </select>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Preview */}
-          <div className="card overflow-x-auto">
-            <p className="text-white font-semibold text-sm mb-3">Prévia — primeiras linhas de dados</p>
-            <table className="w-full text-xs">
-              <thead>
-                <tr>
-                  {headerRow.map((h, i) => (
-                    <th key={i} className={`text-left pb-2 pr-4 font-medium ${
-                      colMap.dateCol === i ? 'text-blue-400' :
-                      colMap.descCol === i ? 'text-yellow-400' :
-                      colMap.amountCol === i || colMap.inCol === i ? 'text-emerald-400' :
-                      colMap.outCol === i ? 'text-red-400' : 'text-gray-600'
-                    }`}>{h.slice(0, 18)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sampleRows.map((row, ri) => (
-                  <tr key={ri} className="border-t border-white/5">
-                    {row.map((cell, ci) => (
-                      <td key={ci} className={`py-1.5 pr-4 truncate max-w-[120px] ${
-                        colMap.dateCol === ci ? 'text-blue-300' :
-                        colMap.descCol === ci ? 'text-white' :
-                        colMap.amountCol === ci || colMap.inCol === ci ? 'text-emerald-300' :
-                        colMap.outCol === ci ? 'text-red-300' : 'text-gray-600'
-                      }`}>{cell || '—'}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={() => setStep('upload')} className="btn-secondary flex items-center gap-2">
-              <ChevronLeft size={16} /> Voltar
+          <p className="text-gray-400 text-sm text-center">
+            Não é esse banco?{' '}
+            <button onClick={() => setStep('bank_select')} className="text-emerald-400 hover:text-emerald-300 underline">
+              Selecionar outro
             </button>
-            <button onClick={goPreview} className="btn-primary flex-1 flex items-center justify-center gap-2">
-              Ver lançamentos <ChevronRight size={16} />
-            </button>
-          </div>
+          </p>
+
+          <button
+            onClick={() => { setEntries(buildEntries()); setStep('preview') }}
+            className="btn-primary w-full"
+          >
+            Continuar <ChevronRight size={16} />
+          </button>
         </div>
       )}
+
+      {/* ── STEP: Seleção manual de banco ── */}
+      {step === 'bank_select' && (
+        <div className="space-y-5">
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <FileText size={16} className="text-emerald-400" />
+            <span className="text-white font-medium">{fileName}</span>
+          </div>
+
+          <div className="card text-center py-2">
+            <p className="text-white font-semibold text-sm mb-1">Qual é o seu banco?</p>
+            <p className="text-gray-500 text-xs">Isso garante que o extrato seja lido corretamente</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 max-h-96 overflow-y-auto pr-1">
+            {BANK_PROFILES.map(bank => (
+              <button
+                key={bank.id}
+                onClick={() => {
+                  setSelectedBank(bank)
+                  const profileMap = bank.colMap
+                  const autoMap    = autoDetectCols(rows, headerIdx)
+                  setColMap(profileMap || autoMap || colMap)
+                  setEntries(buildEntries())
+                  setStep('preview')
+                }}
+                className="flex items-center gap-3 px-3 py-3 rounded-xl border text-left
+                           bg-dark-700 border-white/8 hover:border-emerald-500/30
+                           hover:bg-emerald-500/8 transition-all active:scale-95"
+              >
+                <span className="text-2xl shrink-0">{bank.logo}</span>
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">{bank.name}</p>
+                  <p className="text-gray-500 text-[10px] truncate">{bank.sub}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <button onClick={() => { setStep('upload'); setRows([]); setFileName('') }}
+            className="w-full text-gray-500 text-sm py-2 hover:text-white transition-colors">
+            ← Escolher outro arquivo
+          </button>
+        </div>
+      )}
+
 
       {/* ── STEP 3: Preview & import ── */}
       {step === 'preview' && (
