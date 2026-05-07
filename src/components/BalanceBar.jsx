@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Wallet, CreditCard, RefreshCw, Settings, X, Loader2, Shield } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, getExpenses, getDailySpending, getProfile, upsertProfile } from '../lib/supabase'
+import { getIncome, getExpenses, getDailySpending, getProfile, upsertProfile, getAccounts } from '../lib/supabase'
 import CurrencyInput, { parseCurrency } from './CurrencyInput'
 
 const formatBRL = (v) =>
@@ -61,7 +61,16 @@ export default function BalanceBar() {
     const prevCash   = (pPaidExp.reduce((s, e) => s + Number(e.amount), 0) - pCardExp)
                      + ((pDay.data || []).reduce((s, d) => s + Number(d.amount), 0) - pCardDay)
 
-    setIncome((inc.data || []).reduce((s, i) => s + Number(i.amount), 0))
+    const totalInc = (inc.data || []).reduce((s, i) => s + Number(i.amount), 0)
+
+    // Soma saldo inicial das contas ao income (retrocompatível — getAccounts retorna [] se tabela não existir)
+    let totalInitial = 0
+    try {
+      const { data: accs } = await getAccounts(user.id)
+      totalInitial = (accs || []).reduce((s, a) => s + Number(a.initial_balance || 0), 0)
+    } catch { /* tabela não existe ainda */ }
+
+    setIncome(totalInc + totalInitial)
     setCashExpenses(currCash)
     setCardUsed(totalCardExp + totalCardDaily)
     setPrevCarry(pIncTotal - prevCash)
@@ -72,7 +81,11 @@ export default function BalanceBar() {
   useEffect(() => {
     const h = () => load()
     window.addEventListener('finance-updated', h)
-    return () => window.removeEventListener('finance-updated', h)
+    window.addEventListener('accounts-updated', h)  // recarrega ao adicionar/remover contas
+    return () => {
+      window.removeEventListener('finance-updated', h)
+      window.removeEventListener('accounts-updated', h)
+    }
   }, [load])
 
   const handleSaveLimit = async (e) => {

@@ -3,15 +3,17 @@ import { Link, useNavigate } from 'react-router-dom'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   ChevronRight, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Wallet, CreditCard
+  TrendingUp, TrendingDown, Wallet, CreditCard, Settings, X, Loader2
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   getIncome, getExpenses, getDailySpending,
-  getSavings, getCategoryLimits, getProfile
+  getSavings, getCategoryLimits, getProfile, getAccounts, upsertProfile
 } from '../lib/supabase'
+import { useAccounts } from '../hooks/useAccounts'
 import { useLang } from '../hooks/useLang'
 import MonthPicker from '../components/MonthPicker'
+import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import { format } from 'date-fns'
 
 const formatBRL  = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -141,6 +143,7 @@ function buildMessages({ currCats, limitsMap, totalIncome, totalExpenses, prevTo
 
 export default function Dashboard() {
   const { user, isAdmin } = useAuth()
+  const { accounts, hasMultiple } = useAccounts()
   const t = useLang()
   const navigate = useNavigate()
   const now = new Date()
@@ -156,8 +159,12 @@ export default function Dashboard() {
   const [prevExp,    setPrevExp]    = useState([])
   const [prevDaily,  setPrevDaily]  = useState([])
   const [limitsMap,  setLimitsMap]  = useState({})
-  const [cardLimit,  setCardLimit]  = useState(400)
-  const [loading,    setLoading]    = useState(true)
+  const [cardLimit,      setCardLimit]      = useState(400)
+  const [profileGoal,    setProfileGoal]    = useState(0)   // meta diária definida pelo usuário
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitInput,     setLimitInput]     = useState('')
+  const [savingLimit,    setSavingLimit]    = useState(false)
+  const [loading,        setLoading]        = useState(true)
 
   const fetchAll = async (m, y) => {
     const pm = m === 1 ? 12 : m - 1
@@ -176,8 +183,23 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return
-    getProfile(user.id).then(({ data }) => { if (data?.card_limit) setCardLimit(data.card_limit) })
+    getProfile(user.id).then(({ data }) => {
+      if (data?.card_limit) setCardLimit(data.card_limit)
+      if (data?.daily_goal)  setProfileGoal(data.daily_goal)
+    })
   }, [user])
+
+  const handleSaveLimit = async (e) => {
+    e.preventDefault()
+    const value = parseCurrency(limitInput)
+    if (!value || value <= 0) return
+    setSavingLimit(true)
+    await upsertProfile({ id: user.id, card_limit: value })
+    setCardLimit(value)
+    setSavingLimit(false)
+    setShowLimitModal(false)
+    setLimitInput('')
+  }
 
   useEffect(() => {
     if (!user) return
@@ -200,6 +222,11 @@ export default function Dashboard() {
   useEffect(() => {
     const h = () => {
       if (!user) return
+      // Re-busca o profile para pegar daily_goal atualizado
+      getProfile(user.id).then(({ data }) => {
+        if (data?.card_limit) setCardLimit(data.card_limit)
+        if (data?.daily_goal !== undefined) setProfileGoal(data.daily_goal || 0)
+      })
       fetchAll(month, year).then(([inc, exp, day, sav, pInc, pEx, pDa]) => {
         setIncome(inc.data || [])
         setExpenses(exp.data || [])
@@ -236,9 +263,20 @@ export default function Dashboard() {
   const pPaidExp  = prevExp.filter(e => !e.status || e.status === 'pago')
   const pCash     = pPaidExp.filter(e => e.category !== 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
                   + prevDaily.filter(d => d.payment_method !== 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
-  const prevMonthBal   = pIncTotal - pCash
-  const accBalance     = balance + prevMonthBal
-  const hasPrevBal     = pIncTotal > 0 || pCash > 0
+  const prevMonthBal        = pIncTotal - pCash
+  const totalInitialBalance = accounts.reduce((s, a) => s + Number(a.initial_balance || 0), 0)
+  const accBalance          = balance + prevMonthBal + totalInitialBalance
+  const hasPrevBal          = pIncTotal > 0 || pCash > 0
+
+  // Fix #4 — saldo real por conta (initial + transações filtradas por account_id)
+  const accountBalances = accounts.map(acc => {
+    const isPrincipal = acc.is_principal || accounts.indexOf(acc) === 0
+    const owns = (item) => item.account_id === acc.id || (isPrincipal && !item.account_id)
+    const accInc  = income.filter(owns).reduce((s, i) => s + Number(i.amount), 0)
+    const accExp  = paidExp.filter(e => e.category !== 'credit_card' && owns(e)).reduce((s, e) => s + Number(e.amount), 0)
+    const accDay  = daily.filter(d => d.payment_method !== 'credit_card' && owns(d)).reduce((s, d) => s + Number(d.amount), 0)
+    return { ...acc, currentBalance: Number(acc.initial_balance || 0) + accInc - accExp - accDay }
+  })
 
   // Comparação total gastos
   const prevTotalExp = prevExp.reduce((s, e) => s + Number(e.amount), 0)
@@ -260,7 +298,9 @@ export default function Dashboard() {
   const daysElapsed = now.getDate()
   const totalFixed  = expenses.filter(e => e.category === 'fixed').reduce((s, e) => s + Number(e.amount), 0)
   const availableForDaily = totalIncome - totalFixed
-  const dailyGoal = availableForDaily > 0 ? Math.max(10, Math.round(availableForDaily / daysInMonth)) : 30
+  // Usa meta definida pelo usuário se existir, senão calcula pela renda
+  const dailyGoal = profileGoal > 0 ? profileGoal
+    : availableForDaily > 0 ? Math.max(10, Math.round(availableForDaily / daysInMonth)) : 30
 
   // Gera mensagens contextuais (max 2 total; se pendências visíveis, max 1)
   const allMessages = buildMessages({
@@ -296,9 +336,11 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
             <p className="text-gray-400 text-xs">Saldo disponível</p>
-            <p className={`text-3xl font-bold tracking-tight mt-0.5 ${accBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {/* Fix #3 — clicar no saldo navega para despesas */}
+            <button onClick={() => navigate('/expenses')} title="Ver despesas"
+              className={`text-3xl font-bold tracking-tight mt-0.5 text-left hover:opacity-75 transition-opacity active:scale-95 ${accBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {formatBRL(accBalance)}
-            </p>
+            </button>
             {hasPrevBal && prevMonthBal !== 0 && (
               <p className={`text-xs mt-1 flex items-center gap-1 ${prevMonthBal >= 0 ? 'text-emerald-500/70' : 'text-red-400/70'}`}>
                 {prevMonthBal >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
@@ -310,6 +352,26 @@ export default function Dashboard() {
             <Wallet size={20} className={accBalance >= 0 ? 'text-emerald-400' : 'text-red-400'} />
           </div>
         </div>
+
+        {/* Breakdown por conta — clicável → /accounts */}
+        {hasMultiple && accountBalances.length > 0 && (
+          <button
+            onClick={() => navigate('/accounts')}
+            className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2.5 mt-2 border-t border-white/6
+                       w-full text-left hover:opacity-80 transition-opacity active:scale-98"
+            title="Gerenciar contas"
+          >
+            {accountBalances.map(acc => (
+              <div key={acc.id} className="flex items-center gap-1.5">
+                <span className="text-sm">{acc.emoji}</span>
+                <span className="text-gray-400 text-xs">{acc.name}</span>
+                <span className={`text-xs font-semibold ${acc.currentBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                  {formatBRL(acc.currentBalance)}
+                </span>
+              </div>
+            ))}
+          </button>
+        )}
 
         {/* Linha inferior: Despesas pagas | Cartão disponível */}
         <div className="flex gap-4 pt-2.5 mt-2.5 border-t border-white/6">
@@ -325,6 +387,13 @@ export default function Dashboard() {
             <span className={`text-xs font-semibold ${cardAvailable >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
               {formatBRL(Math.max(cardAvailable, 0))} livre
             </span>
+            <button
+              onClick={() => { setLimitInput(String(Math.round(cardLimit * 100))); setShowLimitModal(true) }}
+              className="text-gray-600 hover:text-gray-400 transition-colors ml-0.5"
+              title="Editar limite"
+            >
+              <Settings size={10} />
+            </button>
           </div>
         </div>
       </div>
@@ -393,7 +462,7 @@ export default function Dashboard() {
         </Link>
       )}
 
-      {/* ── 🥉 CATEGORIAS + GASTO DO DIA ─────────────────────────── */}
+      {/* ── 🥉 CATEGORIAS DO MÊS ────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-white font-semibold text-sm">Categorias do mês</p>
@@ -406,25 +475,28 @@ export default function Dashboard() {
         <div className="card p-4">
           {pieData.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%"
-                    innerRadius={45} outerRadius={68} paddingAngle={2} dataKey="value">
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={v => [formatBRL(v), '']}
-                    contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#f9fafb' }}
-                    itemStyle={{ color: '#e5e7eb' }}
-                    labelStyle={{ color: '#9ca3af' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              {/* Mobile: donut + cards */}
+              <div className="sm:hidden">
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%"
+                      innerRadius={42} outerRadius={65} paddingAngle={2} dataKey="value">
+                      {pieData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={v => [formatBRL(v), '']}
+                      contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#f9fafb' }}
+                      itemStyle={{ color: '#e5e7eb' }}
+                      labelStyle={{ color: '#9ca3af' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
 
-              {/* Legenda em grid 2 colunas */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
+              {/* Desktop: grid de cards (sem donut) | Mobile: lista abaixo do donut */}
+              <div className="mt-2 sm:mt-0 sm:grid sm:grid-cols-2 sm:gap-2 space-y-1.5 sm:space-y-0">
                 {pieData.map(({ name, value }, i) => {
                   const pct = currTotal > 0 ? ((value / currTotal) * 100).toFixed(0) : 0
                   const lim = limitsMap[name] || limitsMap[stripEmoji(name)]
@@ -432,12 +504,35 @@ export default function Dashboard() {
                   const limitThreshold = hasLim
                     ? (lim.limit_type === 'value' ? lim.limit_value : totalIncome * lim.limit_value / 100)
                     : null
+                  const limitPct = hasLim && limitThreshold > 0
+                    ? Math.min((value / limitThreshold) * 100, 100)
+                    : null
                   const overLimit = hasLim && value > limitThreshold
+                  const barColor = overLimit ? '#ef4444' : limitPct > 80 ? '#f59e0b' : COLORS[i % COLORS.length]
                   return (
-                    <div key={name} className="flex items-center gap-2 min-w-0">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                      <span className={`text-xs truncate flex-1 ${overLimit ? 'text-red-400' : 'text-gray-400'}`}>{name}</span>
-                      <span className={`text-xs font-medium shrink-0 ${overLimit ? 'text-red-400' : 'text-gray-500'}`}>{pct}%</span>
+                    <div key={name}
+                      className={`px-3 py-2 rounded-xl border transition-all ${
+                        overLimit ? 'bg-red-500/8 border-red-500/15' : 'bg-dark-600/50 border-white/5'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: barColor }} />
+                        <span className={`text-xs font-medium flex-1 truncate ${overLimit ? 'text-red-400' : 'text-gray-200'}`}>
+                          {name}
+                        </span>
+                        <span className={`text-xs font-bold shrink-0 ${overLimit ? 'text-red-400' : 'text-white'}`}>
+                          {formatBRL(value)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1 bg-dark-700 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full"
+                            style={{ width: `${limitPct ?? pct}%`, background: barColor }} />
+                        </div>
+                        <span className={`text-[10px] shrink-0 ${overLimit ? 'text-red-400' : 'text-gray-500'}`}>
+                          {limitPct !== null ? `${limitPct.toFixed(0)}% limite` : `${pct}%`}
+                        </span>
+                      </div>
                     </div>
                   )
                 })}
@@ -472,22 +567,59 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── 🔹 MENSAGENS INTELIGENTES (max 2, ou 1 se pendências visíveis) ── */}
+      {/* ── AVISOS DO MÊS ─────────────────────────────────────────── */}
       {smartMessages.length > 0 && (
         <div className="space-y-2">
           {smartMessages.map((msg, i) => (
             <div key={i} className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${
               msg.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-300'
-              : msg.type === 'warning' ? 'bg-red-500/8 border-red-500/15 text-red-300'
-              : 'bg-blue-500/8 border-blue-500/15 text-blue-300'
+              : msg.type === 'warning' ? 'bg-amber-500/8 border-amber-500/15 text-amber-300'
+              : 'bg-dark-700 border-white/8 text-gray-300'
             }`}>
-              <span className="text-base shrink-0">💡</span>
               <p className="font-medium leading-snug">{msg.text}</p>
             </div>
           ))}
         </div>
       )}
 
+      {/* Modal: editar limite do cartão */}
+      {showLimitModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          onClick={e => e.target === e.currentTarget && setShowLimitModal(false)}>
+          <div className="bg-dark-700 border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold">💳 Limite do cartão</h2>
+              <button onClick={() => setShowLimitModal(false)} className="text-gray-500 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-gray-400 text-sm mb-4">
+              Atual: <span className="text-white font-semibold">{formatBRL(cardLimit)}</span>
+            </p>
+            <form onSubmit={handleSaveLimit} className="space-y-4">
+              <CurrencyInput
+                className="w-full bg-dark-600 border border-white/10 rounded-xl px-4 py-3
+                           text-white text-lg font-semibold focus:outline-none focus:border-emerald-500/50"
+                value={limitInput}
+                onChange={setLimitInput}
+                placeholder="0,00"
+                autoFocus required
+              />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowLimitModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-400 text-sm">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={savingLimit}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold text-sm
+                             flex items-center justify-center gap-2">
+                  {savingLimit ? <><Loader2 size={15} className="animate-spin" /> Salvando...</> : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -175,6 +175,41 @@ export const upsertCategoryLimit = async (userId, categoryLabel, limitType, limi
   return { data, error }
 }
 
+// ─── ACCOUNTS ────────────────────────────────────────────────────────────────
+
+export const getAccounts = async (userId) => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('is_principal', { ascending: false })
+    .order('created_at', { ascending: true })
+  return { data, error }
+}
+
+export const addAccount = async (account) => {
+  const { data, error } = await supabase.from('accounts').insert([account]).select()
+  return { data, error }
+}
+
+export const updateAccount = async (id, updates) => {
+  const { data, error } = await supabase.from('accounts').update(updates).eq('id', id).select()
+  return { data, error }
+}
+
+export const deleteAccount = async (id) => {
+  const { error } = await supabase.from('accounts').delete().eq('id', id)
+  return { error }
+}
+
+export const setPrincipalAccount = async (userId, accountId) => {
+  // Remove principal de todas, depois marca a nova
+  await supabase.from('accounts').update({ is_principal: false }).eq('user_id', userId)
+  const { data, error } = await supabase
+    .from('accounts').update({ is_principal: true }).eq('id', accountId).select()
+  return { data, error }
+}
+
 // ─── USER CATEGORIES ─────────────────────────────────────────────────────────
 
 export const getUserCategories = async (userId) => {

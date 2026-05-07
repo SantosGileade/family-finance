@@ -8,17 +8,21 @@ import { useLang } from '../hooks/useLang'
 import CurrencyInput, { parseCurrency } from './CurrencyInput'
 import { getUserCategories } from '../lib/supabase'
 import { DEFAULT_CATEGORIES } from '../data/defaultCategories'
+import { useAccounts } from '../hooks/useAccounts'
 
 
 export default function QuickAdd() {
   const { user, isAdmin, profile } = useAuth()
   const { check } = usePlanGate()
   const t = useLang()
+  const { accounts, principalAccount, hasMultiple } = useAccounts()
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState('')
   const [selectedCat, setSelectedCat] = useState(null)
   const [customDesc, setCustomDesc] = useState('')
-  const [method, setMethod] = useState('debit')
+  const [method,       setMethod]       = useState('debit')
+  const [accountId,    setAccountId]    = useState(null)
+  const [installments, setInstallments] = useState(1)
   const [allCategories, setAllCategories] = useState(DEFAULT_CATEGORIES)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -41,6 +45,8 @@ export default function QuickAdd() {
     setSelectedCat(null)
     setCustomDesc('')
     setMethod('debit')
+    setInstallments(1)
+    setAccountId(principalAccount?.id || null)
     setSaved(false)
     setOpen(true)
   }
@@ -72,13 +78,37 @@ export default function QuickAdd() {
           : `${selectedCat.emoji} ${selectedCat.label}`)
       : (customDesc.trim() || 'Gasto rápido')
 
-    await addDailySpending({
-      user_id: user.id,
-      description: finalDesc,
-      amount: val,
-      payment_method: method === 'credit_card' ? 'credit_card' : 'debit',
-      date: format(new Date(), 'yyyy-MM-dd'),
-    })
+    const today = format(new Date(), 'yyyy-MM-dd')
+    if (method === 'credit_card' && installments > 1) {
+      // Parcelado: cria uma despesa por mês via addExpense
+      const { addExpense } = await import('../lib/supabase')
+      const base = new Date()
+      const perInstallment = Math.round((val / installments) * 100) / 100
+      await Promise.all(Array.from({ length: installments }, (_, i) => {
+        const d = new Date(base)
+        d.setMonth(d.getMonth() + i)
+        return addExpense({
+          user_id: user.id,
+          description: `${finalDesc} (${i + 1}/${installments})`,
+          amount: perInstallment,
+          category: 'credit_card',
+          date: format(d, 'yyyy-MM-dd'),
+          month: d.getMonth() + 1,
+          year: d.getFullYear(),
+          is_recurring: false,
+          status: 'pendente',
+        })
+      }))
+    } else {
+      await addDailySpending({
+        user_id: user.id,
+        description: finalDesc,
+        amount: val,
+        account_id: accountId || null,
+        payment_method: method === 'credit_card' ? 'credit_card' : 'debit',
+        date: today,
+      })
+    }
     window.dispatchEvent(new Event('finance-updated'))
     setSaving(false)
     setSaved(true)
@@ -210,7 +240,7 @@ export default function QuickAdd() {
             <div className="flex gap-2 mb-5">
               <button
                 type="button"
-                onClick={() => setMethod('debit')}
+                onClick={() => { setMethod('debit'); setInstallments(1) }}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
                   method === 'debit'
                     ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
@@ -231,6 +261,58 @@ export default function QuickAdd() {
                 💳 Cartão
               </button>
             </div>
+
+            {/* Parcelas — só no cartão de crédito */}
+            {method === 'credit_card' && (
+              <div className="mb-4">
+                <p className="text-gray-500 text-xs mb-1.5">Parcelas</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[1,2,3,4,5,6,10,12].map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setInstallments(n)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+                        installments === n
+                          ? 'bg-red-500/20 border-red-500/40 text-red-300'
+                          : 'bg-dark-600 border-white/8 text-gray-400'
+                      }`}
+                    >
+                      {n === 1 ? 'À vista' : `${n}x`}
+                    </button>
+                  ))}
+                </div>
+                {installments > 1 && parseCurrency(amount) > 0 && (
+                  <p className="text-gray-500 text-xs mt-1.5">
+                    = {(parseCurrency(amount) / installments).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/mês
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Seletor de conta — só aparece com 2+ contas E débito/dinheiro selecionado */}
+            {hasMultiple && method !== 'credit_card' && (
+              <div className="mb-4">
+                <p className="text-gray-500 text-xs mb-1.5">Conta</p>
+                <div className="flex gap-2 flex-wrap">
+                  {accounts.map(acc => (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setAccountId(acc.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+                        accountId === acc.id
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                          : 'bg-dark-600 border-white/8 text-gray-400'
+                      }`}
+                    >
+                      <span>{acc.emoji}</span>
+                      <span>{acc.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Salvar */}
             <button

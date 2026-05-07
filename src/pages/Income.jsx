@@ -8,6 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { useLang } from '../hooks/useLang'
 import { format } from 'date-fns'
 import { usePlanGate } from '../contexts/PlanGateContext'
+import { useAccounts } from '../hooks/useAccounts'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -24,6 +25,7 @@ export default function Income() {
   const { user, isAdmin } = useAuth()
   const { check } = usePlanGate()
   const t = useLang()
+  const { accounts, principalAccount, hasMultiple } = useAccounts()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -40,6 +42,7 @@ export default function Income() {
     amount: '',
     category: 'salary',
     date: format(new Date(), 'yyyy-MM-dd'),
+    account_id: null,
   })
 
   const load = async () => {
@@ -65,7 +68,14 @@ export default function Income() {
   const closeModal = () => {
     setShowModal(false)
     setEditingId(null)
-    setForm({ description: '', amount: '', category: 'salary', date: format(new Date(), 'yyyy-MM-dd') })
+    setForm({ description: '', amount: '', category: 'salary', date: format(new Date(), 'yyyy-MM-dd'), account_id: principalAccount?.id || null })
+  }
+
+  // Pré-seleciona conta principal ao abrir modal
+  const openModal = () => {
+    if (!check()) return
+    setForm(f => ({ ...f, account_id: principalAccount?.id || null }))
+    setShowModal(true)
   }
 
   const handleAdd = async (e) => {
@@ -84,7 +94,7 @@ export default function Income() {
     if (editingId) {
       await updateIncome(editingId, payload)
     } else {
-      await addIncome({ user_id: user.id, ...payload })
+      await addIncome({ user_id: user.id, ...payload, account_id: form.account_id || null })
     }
     closeModal()
     setSaving(false)
@@ -129,7 +139,7 @@ export default function Income() {
           </div>
         </div>
 
-        <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary w-full mt-4">
+        <button onClick={openModal} className="btn-primary w-full mt-4">
           <Plus size={18} /> {t('Adicionar renda · Add income')}
         </button>
       </div>
@@ -147,7 +157,7 @@ export default function Income() {
             <DollarSign size={40} className="text-gray-600 mx-auto mb-3" />
             <p className="text-gray-400 font-medium">Nenhuma entrada registrada</p>
             {isAdmin && <p className="text-gray-600 text-sm mt-1">No income recorded for this month</p>}
-            <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary mx-auto mt-4">
+            <button onClick={openModal} className="btn-primary mx-auto mt-4">
               <Plus size={16} /> Adicionar renda
             </button>
           </div>
@@ -163,6 +173,14 @@ export default function Income() {
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="badge-green">{catLabel(item.category)}</span>
                     <span className="text-gray-500 text-xs">{item.date}</span>
+                    {(() => {
+                      const acc = accounts.find(a => a.id === item.account_id)
+                      return acc ? (
+                        <span className="text-xs text-gray-600 flex items-center gap-0.5">
+                          {acc.emoji} {acc.name}
+                        </span>
+                      ) : null
+                    })()}
                   </div>
                 </div>
                 <div className="text-right">
@@ -283,6 +301,27 @@ export default function Income() {
               </div>
 
               <div className="flex gap-3 pt-2">
+                {/* Seletor de conta — só com 2+ contas */}
+                {hasMultiple && (
+                  <div>
+                    <label className="label">Conta</label>
+                    <div className="flex flex-wrap gap-2">
+                      {accounts.map(acc => (
+                        <button key={acc.id} type="button"
+                          onClick={() => setForm(f => ({ ...f, account_id: acc.id }))}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm transition-all ${
+                            form.account_id === acc.id
+                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                              : 'bg-dark-600 border-white/8 text-gray-400'
+                          }`}
+                        >
+                          {acc.emoji} {acc.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <button type="button" onClick={closeModal} className="btn-secondary flex-1">
                   Cancelar
                 </button>

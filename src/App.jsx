@@ -11,6 +11,7 @@ import Savings from './pages/Savings'
 import Tips from './pages/Tips'
 import Import from './pages/Import'
 import Categories from './pages/Categories'
+import Accounts from './pages/Accounts'
 import Reports from './pages/Reports'
 import Admin from './pages/Admin'
 
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="tips" element={<Tips />} />
         <Route path="import" element={<Import />} />
         <Route path="categories" element={<Categories />} />
+        <Route path="accounts" element={<Accounts />} />
         <Route path="reports" element={<Reports />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

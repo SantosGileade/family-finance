@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Target, Loader2, X } from 'lucide-react'
+import { Plus, Trash2, Target, Loader2, X, Pencil } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses, getUserCategories } from '../lib/supabase'
+import { getDailySpending, addDailySpending, deleteDailySpending, getIncome, getExpenses, getUserCategories, upsertProfile } from '../lib/supabase'
 import { DEFAULT_CATEGORIES } from '../data/defaultCategories'
 import MonthPicker from '../components/MonthPicker'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
@@ -24,7 +24,11 @@ export default function DailySpending() {
   const [year, setYear] = useState(now.getFullYear())
 
   const [items,          setItems]          = useState([])
-  const [dailyGoal,      setDailyGoal]      = useState(30)
+  const [dailyGoal,       setDailyGoal]      = useState(30)
+  const [suggestedGoal,   setSuggestedGoal]  = useState(30)
+  const [showGoalEdit,    setShowGoalEdit]   = useState(false)
+  const [goalInput,       setGoalInput]      = useState('')
+  const [savingGoal,      setSavingGoal]     = useState(false)
   const [spendingTags,   setSpendingTags]   = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal,    setShowModal]    = useState(false)
@@ -56,7 +60,11 @@ export default function DailySpending() {
       .reduce((s, e) => s + Number(e.amount), 0)
     const available = totalInc - totalFixed
     const daysInMes = new Date(year, month, 0).getDate()
-    setDailyGoal(available > 0 ? Math.max(10, Math.round(available / daysInMes)) : 30)
+    const calculated = available > 0 ? Math.max(10, Math.round(available / daysInMes)) : 30
+    setSuggestedGoal(calculated)
+    // Usa meta definida pelo usuário se existir, senão usa o cálculo
+    const profileGoal = profile?.daily_goal
+    setDailyGoal(profileGoal && profileGoal > 0 ? profileGoal : calculated)
 
     setLoading(false)
   }
@@ -166,7 +174,16 @@ export default function DailySpending() {
               style={{ width: `${Math.min((todayTotal / dailyGoal) * 100, 100)}%` }}
             />
           </div>
-          <p className="text-gray-500 text-xs mt-1">Meta: {formatBRL(dailyGoal)}</p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-gray-500 text-xs">Meta: {formatBRL(dailyGoal)}/dia</p>
+            <button
+              onClick={() => { setGoalInput(String(Math.round(dailyGoal * 100))); setShowGoalEdit(true) }}
+              className="text-gray-600 hover:text-emerald-400 transition-colors"
+              title="Editar meta"
+            >
+              <Pencil size={11} />
+            </button>
+          </div>
         </div>
 
         <div className="card">
@@ -329,6 +346,59 @@ export default function DailySpending() {
       </div>
 
       {/* ── CONFIRM DELETE ─────────────────────────────────────── */}
+      {/* Modal editar meta diária */}
+      {showGoalEdit && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          onClick={() => setShowGoalEdit(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full sm:max-w-sm bg-dark-700 rounded-t-3xl sm:rounded-2xl
+                          border border-white/10 shadow-2xl z-10 animate-slide-up px-5 pt-4 pb-8"
+            onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4 sm:hidden" />
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-white font-semibold">Meta diária</p>
+                <p className="text-gray-500 text-xs mt-0.5">Quanto quer gastar por dia no máximo</p>
+              </div>
+              <button onClick={() => setShowGoalEdit(false)} className="text-gray-500 hover:text-white"><X size={18} /></button>
+            </div>
+            <CurrencyInput
+              className="input-field text-lg font-semibold mb-3"
+              value={goalInput}
+              onChange={setGoalInput}
+              placeholder="0,00"
+              autoFocus
+            />
+            {suggestedGoal > 0 && (
+              <p className="text-gray-500 text-xs mb-4">
+                💡 Sugestão com base na sua renda: <span className="text-emerald-400 font-medium">{formatBRL(suggestedGoal)}/dia</span>
+                {' '}
+                <button onClick={() => setGoalInput(String(Math.round(suggestedGoal * 100)))}
+                  className="text-emerald-400 underline hover:text-emerald-300">
+                  usar
+                </button>
+              </p>
+            )}
+            <button
+              onClick={async () => {
+                const val = parseCurrency(goalInput)
+                if (!val || val <= 0) return
+                setSavingGoal(true)
+                await upsertProfile({ id: user.id, daily_goal: val })
+                setDailyGoal(val)
+                window.dispatchEvent(new Event('finance-updated'))  // atualiza home
+                setSavingGoal(false)
+                setShowGoalEdit(false)
+              }}
+              disabled={savingGoal}
+              className="btn-primary w-full"
+            >
+              {savingGoal ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : 'Salvar meta'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {confirmId && (
         <ConfirmDialog
           message="Esse gasto diário será removido permanentemente."

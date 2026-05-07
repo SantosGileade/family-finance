@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil, CheckCircle, Clock } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -34,6 +34,7 @@ const SUBCATEGORIES = {
 
 export default function Expenses() {
   const { user, isAdmin } = useAuth()
+  const isCopyingRef = useRef(false)  // evita auto-cópia duplicada
   const { check } = usePlanGate()
   const t = useLang()
   const location = useLocation()
@@ -58,6 +59,7 @@ export default function Expenses() {
     amount: '',
     category: 'fixed',
     date: format(new Date(), 'yyyy-MM-dd'),
+    installments: 1,
   })
 
   const load = async () => {
@@ -75,9 +77,17 @@ export default function Expenses() {
     const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
     const hasFixed = expenses.some(e => e.is_recurring && e.category === 'fixed')
 
-    if (isCurrentMonth && !hasFixed) {
+    if (isCurrentMonth && !hasFixed && !isCopyingRef.current) {
+      isCopyingRef.current = true
       const prevMonth = month === 1 ? 12 : month - 1
       const prevYear  = month === 1 ? year - 1 : year
+
+      // Segunda verificação no banco para evitar race condition / strict mode duplo
+      const { data: recheckData } = await getExpenses(user.id, month, year)
+      const alreadyHasFixed = (recheckData || []).some(e => e.is_recurring && e.category === 'fixed')
+      if (alreadyHasFixed) { isCopyingRef.current = false; expenses = recheckData || expenses }
+      else {
+
       const { data: prevExp } = await getExpenses(user.id, prevMonth, prevYear)
       const recurring = (prevExp || []).filter(e => e.is_recurring && e.category === 'fixed')
 
@@ -104,6 +114,8 @@ export default function Expenses() {
         expenses = [...expenses, ...newItems]
         window.dispatchEvent(new Event('finance-updated'))
       }
+      isCopyingRef.current = false
+      } // fim do else (segunda verificação)
     }
 
     setItems(expenses)
@@ -167,14 +179,41 @@ export default function Expenses() {
         })
       }
     } else if (form.category === 'credit_card') {
-      // Cartão vai direto pro daily_spending para aparecer também no Diário
-      await addDailySpending({
-        user_id: user.id,
-        description: form.description,
-        amount,
-        payment_method: 'credit_card',
-        date: form.date,
-      })
+      const nParcelas = Number(form.installments) || 1
+      const amountPerInstallment = Math.round((amount / nParcelas) * 100) / 100
+
+      if (nParcelas <= 1) {
+        // Parcela única — vai pro daily_spending como antes
+        await addDailySpending({
+          user_id: user.id,
+          description: form.description,
+          amount,
+          payment_method: 'credit_card',
+          date: form.date,
+        })
+      } else {
+        // Parcelado — cria uma despesa por mês nas próximas N parcelas
+        const baseDate = new Date(form.date + 'T12:00:00')
+        const futures = []
+        for (let p = 0; p < nParcelas; p++) {
+          const d = new Date(baseDate)
+          d.setMonth(d.getMonth() + p)
+          const dateStr = format(d, 'yyyy-MM-dd')
+          const desc = `${form.description} (${p + 1}/${nParcelas})`
+          futures.push(addExpense({
+            user_id: user.id,
+            description: desc,
+            amount: amountPerInstallment,
+            category: 'credit_card',
+            date: dateStr,
+            month: d.getMonth() + 1,
+            year: d.getFullYear(),
+            is_recurring: false,
+            status: p === 0 ? 'pendente' : 'pendente',
+          }))
+        }
+        await Promise.all(futures)
+      }
     } else {
       // Cria a despesa do mês atual
       await addExpense({
@@ -281,26 +320,6 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* Credit card alert */}
-      {totalCard > 0 && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-          <p className="text-red-400 font-semibold text-sm mb-1">💳 Objetivo: sair do cartão!</p>
-          <p className="text-red-300/70 text-xs">
-            Você tem {formatBRL(totalCard)} no cartão. Tente reduzir isso mês a mês.
-            <br />
-            {isAdmin && <span className="text-gray-500 italic">Goal: get off the credit card!</span>}
-          </p>
-          <div className="mt-2 h-1.5 rounded-full bg-dark-600">
-            <div
-              className="h-full rounded-full bg-red-500 transition-all"
-              style={{ width: `${Math.min((totalCard / (totalAll || 1)) * 100, 100)}%` }}
-            />
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Cartão representa {totalAll > 0 ? ((totalCard / totalAll) * 100).toFixed(0) : 0}% das despesas
-          </p>
-        </div>
-      )}
 
       {/* Add button */}
       <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary w-full">
@@ -595,6 +614,34 @@ export default function Expenses() {
                 <p className="text-blue-400 text-xs bg-blue-500/10 border border-blue-500/20 rounded-xl px-3 py-2">
                   🔄 Será criada automaticamente para todos os meses restantes do ano.
                 </p>
+              )}
+
+              {/* Parcelas — só para cartão de crédito */}
+              {!editingItem && form.category === 'credit_card' && (
+                <div>
+                  <label className="label">Parcelas</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {[1,2,3,4,5,6,10,12].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, installments: n }))}
+                        className={`px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                          form.installments === n
+                            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                            : 'bg-dark-600 border-white/8 text-gray-400 hover:border-white/20'
+                        }`}
+                      >
+                        {n === 1 ? 'À vista' : `${n}x`}
+                      </button>
+                    ))}
+                  </div>
+                  {form.installments > 1 && parseCurrency(form.amount) > 0 && (
+                    <p className="text-gray-500 text-xs mt-2">
+                      = {formatBRL(parseCurrency(form.amount) / form.installments)}/mês por {form.installments} meses
+                    </p>
+                  )}
+                </div>
               )}
 
               <div className="flex gap-3 pt-2">
