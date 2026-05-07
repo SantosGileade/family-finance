@@ -36,12 +36,20 @@ export default function CurrencyInput({
     onChange(digits)
   }
 
+  const handleFocus = (e) => {
+    // Rola o campo para ficar visível acima do teclado virtual no mobile
+    setTimeout(() => {
+      e.target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 350)
+  }
+
   return (
     <input
       type="text"
       inputMode="numeric"
       value={formatMask(value)}
       onChange={handleChange}
+      onFocus={handleFocus}
       placeholder={placeholder}
       className={className}
       required={required}

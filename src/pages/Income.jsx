@@ -163,39 +163,43 @@ export default function Income() {
           </div>
         ) : (
           <div className="space-y-2">
-            {items.map((item) => (
-              <div key={item.id} className="card-hover flex items-center gap-3 p-3">
-                <div className="w-10 h-10 bg-emerald-500/15 rounded-xl flex items-center justify-center text-lg shrink-0">
-                  {catEmoji(item.category)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium text-sm truncate">{item.description}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="badge-green">{catLabel(item.category)}</span>
-                    <span className="text-gray-500 text-xs">{item.date}</span>
-                    {(() => {
-                      const acc = accounts.find(a => a.id === item.account_id)
-                      return acc ? (
-                        <span className="text-xs text-gray-600 flex items-center gap-0.5">
-                          {acc.emoji} {acc.name}
-                        </span>
-                      ) : null
-                    })()}
+            {items.map((item) => {
+              const acc = accounts.find(a => a.id === item.account_id)
+              // Formata data como DD/MM para economizar espaço no mobile
+              const dateShort = item.date
+                ? item.date.split('-').reverse().slice(0, 2).join('/')
+                : ''
+              return (
+              <div key={item.id} className="card-hover p-3">
+                {/* Linha 1: ícone + descrição + valor */}
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 bg-emerald-500/15 rounded-xl flex items-center justify-center text-base shrink-0">
+                    {catEmoji(item.category)}
                   </div>
+                  <p className="flex-1 text-white font-medium text-sm truncate min-w-0">{item.description}</p>
+                  <p className="text-emerald-400 font-bold text-sm shrink-0">{formatBRL(item.amount)}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-emerald-400 font-bold">{formatBRL(item.amount)}</p>
-                  <div className="flex gap-1 justify-end mt-1">
-                    <button onClick={() => openEdit(item)} className="btn-secondary text-xs">
-                      <Pencil size={12} /> Editar
+                {/* Linha 2: badges + conta + botões */}
+                <div className="flex items-center gap-1.5 mt-2 ml-11">
+                  <span className="badge-green text-xs shrink-0">{catLabel(item.category)}</span>
+                  <span className="text-gray-600 text-xs shrink-0">{dateShort}</span>
+                  {acc && (
+                    <span className="text-xs text-gray-600 flex items-center gap-0.5 shrink-0">
+                      · {acc.emoji} {acc.name}
+                    </span>
+                  )}
+                  <div className="flex gap-1 ml-auto shrink-0">
+                    <button onClick={() => openEdit(item)} className="btn-secondary text-xs py-1 px-2">
+                      <Pencil size={11} />
                     </button>
-                    <button onClick={() => setConfirmId(item.id)} className="btn-danger text-xs">
-                      <Trash2 size={12} /> Excluir
+                    <button onClick={() => setConfirmId(item.id)} className="btn-danger text-xs py-1 px-2">
+                      <Trash2 size={11} />
                     </button>
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

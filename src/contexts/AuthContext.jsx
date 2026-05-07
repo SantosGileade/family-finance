@@ -9,7 +9,7 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // loadProfile com timeout de 3s — evita travar quando rede está lenta (ex: tab voltando do sleep)
+  // loadProfile com timeout de 1.5s — resposta rápida, evita trava ao voltar para aba
   const loadProfile = async (authUser) => {
     if (!authUser) {
       setProfile(null)
@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const result = await Promise.race([
         getProfile(authUser.id),
-        new Promise(resolve => setTimeout(() => resolve({ data: null }), 3000))
+        new Promise(resolve => setTimeout(() => resolve({ data: null }), 1500))
       ])
       if (result?.data) setProfile(result.data)
       return result?.data ?? null
@@ -35,8 +35,8 @@ export const AuthProvider = ({ children }) => {
   }
 
   useEffect(() => {
-    // Safety net: se depois de 5s loading ainda estiver true, força false
-    const safetyTimer = setTimeout(() => setLoading(false), 5000)
+    // Safety net: se depois de 2.5s loading ainda estiver true, força false
+    const safetyTimer = setTimeout(() => setLoading(false), 2500)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       clearTimeout(safetyTimer)
@@ -45,13 +45,14 @@ export const AuthProvider = ({ children }) => {
 
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (u) {
-          setLoading(true) // mantém loading enquanto busca o profile (evita flash em /expired)
-          await loadProfile(u)
+          // Se o profile já está em memória (voltou da aba), não re-carrega
+          if (!profile) {
+            setLoading(true)
+            await loadProfile(u)
+          }
         }
       } else if (event === 'TOKEN_REFRESHED') {
-        // Aba voltando do sleep — token foi renovado, profile já está em memória
-        // NÃO chama loadProfile de novo para evitar hang com rede lenta
-        // só garante que o user está atualizado
+        // Aba voltando do sleep — token renovado, profile já em memória, não recarrega
       } else if (event === 'SIGNED_OUT') {
         setProfile(null)
       }
