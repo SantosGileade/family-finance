@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import BackButton from '../components/BackButton'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart2, Tag } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import MonthPicker from '../components/MonthPicker'
 import { useAuth } from '../contexts/AuthContext'
 import { getDailySpending, getIncome, getCategoryLimits } from '../lib/supabase'
@@ -34,6 +35,7 @@ const PERIOD_TABS = [
 export default function Reports() {
   const { user } = useAuth()
   const t = useLang()
+  const navigate = useNavigate()
   const now = new Date()
 
   const [period, setPeriod] = useState('current')
@@ -121,7 +123,17 @@ export default function Reports() {
           <BackButton />
           <h1 className="page-title">Relatório</h1>
         </div>
-        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/categories')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/8
+                       bg-dark-700 text-gray-400 hover:text-white hover:bg-dark-600 transition-all text-xs"
+            title="Editar categorias"
+          >
+            <Tag size={13} /> Categorias
+          </button>
+          <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -341,24 +353,18 @@ export default function Reports() {
             </>
           )}
 
-          {/* Insights */}
+          {/* Avisos do período — mesmo padrão da home */}
           {insights.length > 0 && (
-            <div>
-              <p className="section-title mb-3">💡 Insights automáticos</p>
-              <div className="space-y-2">
-                {insights.map((ins, i) => (
-                  <div key={i} className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${
-                    ins.type === 'bad'  ? 'bg-red-500/8 border-red-500/15 text-red-300'
-                    : ins.type === 'good' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-300'
-                    : 'bg-blue-500/8 border-blue-500/15 text-blue-300'
-                  }`}>
-                    <span className="text-base shrink-0">
-                      {ins.type === 'bad' ? '⚠️' : ins.type === 'good' ? '✅' : 'ℹ️'}
-                    </span>
-                    <p>{ins.text}</p>
-                  </div>
-                ))}
-              </div>
+            <div className="space-y-2">
+              {insights.map((ins, i) => (
+                <div key={i} className={`px-4 py-3 rounded-xl border text-sm font-medium ${
+                  ins.type === 'bad'  ? 'bg-amber-500/8 border-amber-500/15 text-amber-300'
+                  : ins.type === 'good' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-300'
+                  : 'bg-dark-700 border-white/8 text-gray-300'
+                }`}>
+                  {ins.text}
+                </div>
+              ))}
             </div>
           )}
 
