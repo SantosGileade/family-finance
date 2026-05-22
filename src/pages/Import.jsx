@@ -1,12 +1,104 @@
 import { useState, useRef } from 'react'
 import BackButton from '../components/BackButton'
-import { Upload, FileText, ChevronRight, ChevronLeft, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { Upload, FileText, ChevronRight, ChevronLeft, Check, AlertCircle, Loader2, GitMerge } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { addIncome, addExpense } from '../lib/supabase'
+import { addIncome, addExpense, supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+// ── Duplicate Detection ───────────────────────────────────────────────────────
+
+// Palavras genéricas de pagamento que não identificam nada
+const PAYMENT_STOP_WORDS = new Set([
+  'pix', 'ted', 'doc', 'via', 'pgto', 'pagto', 'pagamento', 'debito', 'credito',
+  'compra', 'transf', 'transferencia', 'cartao', 'extrato', 'lancamento',
+  'com', 'www', 'app', 'net', 'ltda', 'eireli', 'epp', 'mei', 'cnpj', 'cpf',
+  'sao', 'rio', 'brasil', 'brl', 'br', 'sac', 'nfe',
+])
+
+// Extrai palavras significativas (sem stop words, mín. 3 chars)
+function extractKeywords(str) {
+  if (!str) return []
+  return str
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // remove acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')  // só letras/números
+    .replace(/\s+/g, ' ').trim()
+    .split(' ')
+    .filter(w => w.length >= 3 && !PAYMENT_STOP_WORDS.has(w))
+}
+
+// Verifica sobreposição de palavras-chave (bidirecional + substring)
+function hasKeywordOverlap(desc1, desc2) {
+  const kw1 = extractKeywords(desc1)
+  const kw2 = extractKeywords(desc2)
+  if (!kw1.length || !kw2.length) return false
+  for (const w of kw1) {
+    for (const k of kw2) {
+      if (w === k) return true                          // "tag" === "tag"
+      if (w.length >= 4 && k.includes(w)) return true  // "netflix" in "netflix.com"
+      if (k.length >= 4 && w.includes(k)) return true  // "uber" in "ubertrip"
+    }
+  }
+  return false
+}
+
+// Níveis de confiança:
+//   'definite' → mesma data + mesmo valor
+//   'likely'   → mesmo valor + keyword match (≤45 dias) OU data próxima (≤3 dias)
+//   'possible' → mesmo valor + mesmo mês (apenas para valores ≥ R$5)
+function calcDuplicateMatch(entry, existing) {
+  // Valor deve bater (tolerância de 1 centavo)
+  if (Math.abs(Number(entry.amount) - Number(existing.amount)) >= 0.011) return null
+
+  const d1 = new Date(entry.date + 'T12:00:00')
+  const d2 = new Date(existing.date + 'T12:00:00')
+  const dayDiff = Math.abs((d1 - d2) / 86_400_000)
+  const sameMonth = d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()
+  const kwOverlap = hasKeywordOverlap(entry.description, existing.description)
+
+  let tier = null
+  if (dayDiff === 0) {
+    tier = 'definite'                              // data + valor idênticos
+  } else if (kwOverlap && dayDiff <= 45) {
+    tier = 'likely'                                // mesma palavra-chave, até 45 dias
+  } else if (dayDiff <= 3) {
+    tier = 'likely'                                // data próxima (assentamento bancário), sem keyword
+  } else if (sameMonth && Number(entry.amount) >= 5) {
+    tier = 'possible'                              // mesmo mês + mesmo valor (≥ R$5)
+  }
+
+  return tier ? { tier, dayDiff, kwOverlap } : null
+}
+
+const TIER_CONFIG = {
+  definite: {
+    label: 'Duplicata provável',
+    sublabel: 'Mesmo valor e data',
+    border: 'border-red-500/30',
+    bg: 'bg-red-500/8',
+    badge: 'bg-red-500/15 text-red-300',
+    defaultResolution: 'skip',
+  },
+  likely: {
+    label: 'Possível duplicata',
+    sublabel: 'Mesmo valor + nome parecido ou data próxima',
+    border: 'border-amber-500/30',
+    bg: 'bg-amber-500/8',
+    badge: 'bg-amber-500/15 text-amber-300',
+    defaultResolution: 'skip',
+  },
+  possible: {
+    label: 'Valor coincidente',
+    sublabel: 'Mesmo valor no mês — verifique',
+    border: 'border-blue-500/30',
+    bg: 'bg-blue-500/8',
+    badge: 'bg-blue-500/15 text-blue-300',
+    defaultResolution: 'import',    // menos certeza → padrão é importar
+  },
+}
 
 // ── CSV Parsers ───────────────────────────────────────────────────────────────
 
@@ -382,10 +474,12 @@ export default function Import() {
   const [colMap,        setColMap]        = useState({ dateCol: 0, descCol: 1, amountCol: 2, inCol: -1, outCol: -1, mode: 'single' })
   const [entries,       setEntries]       = useState([])
   const [saving,        setSaving]        = useState(false)
+  const [checking,      setChecking]      = useState(false)
   const [done,          setDone]          = useState(null)
   const [dragOver,      setDragOver]      = useState(false)
   const [detectedBank,  setDetectedBank]  = useState(null)   // perfil detectado
   const [selectedBank,  setSelectedBank]  = useState(null)   // banco escolhido pelo usuário
+  const [conflicts,     setConflicts]     = useState([])     // duplicatas detectadas
 
   const numCols = rows.length > 0 ? Math.max(...rows.slice(0, 15).map(r => r.length)) : 0
   const headerRow = rows[headerIdx] || []
@@ -496,10 +590,95 @@ export default function Import() {
 
   const selectedCount = entries.filter(e => e.selected).length
 
-  const handleImport = async () => {
+  // Busca registros existentes num range de datas (±45 dias do import)
+  const fetchExisting = async (selected) => {
+    if (!selected.length) return { allExpenses: [], allIncome: [] }
+    const dates = selected.map(e => e.date).sort()
+    const minD = new Date(dates[0] + 'T12:00:00')
+    const maxD = new Date(dates[dates.length - 1] + 'T12:00:00')
+    minD.setDate(minD.getDate() - 45)
+    maxD.setDate(maxD.getDate() + 45)
+    const startStr = minD.toISOString().slice(0, 10)
+    const endStr   = maxD.toISOString().slice(0, 10)
+
+    const { data: exp } = await supabase
+      .from('expenses').select('id,date,amount,description')
+      .eq('user_id', user.id).gte('date', startStr).lte('date', endStr)
+    const { data: inc } = await supabase
+      .from('income').select('id,date,amount,description')
+      .eq('user_id', user.id).gte('date', startStr).lte('date', endStr)
+
+    return { allExpenses: exp || [], allIncome: inc || [] }
+  }
+
+  const TIER_ORDER = { definite: 3, likely: 2, possible: 1 }
+
+  const handleCheckDuplicates = async () => {
+    const selected = entries.filter(e => e.selected)
+    if (!selected.length) return
+    setChecking(true)
+
+    try {
+      const { allExpenses, allIncome } = await fetchExisting(selected)
+
+      const found = []
+      for (const entry of selected) {
+        const pool = entry.type === 'expense' ? allExpenses : allIncome
+        let best = null
+
+        for (const existing of pool) {
+          const match = calcDuplicateMatch(entry, existing)
+          if (!match) continue
+          if (!best || TIER_ORDER[match.tier] > TIER_ORDER[best.tier]) {
+            best = { existing, ...match }
+          }
+        }
+
+        if (best) {
+          const cfg = TIER_CONFIG[best.tier]
+          found.push({
+            entry,
+            existing: best.existing,
+            tier: best.tier,
+            dayDiff: best.dayDiff,
+            kwOverlap: best.kwOverlap,
+            resolution: cfg.defaultResolution,
+          })
+        }
+      }
+
+      if (found.length > 0) {
+        setConflicts(found)
+        setStep('conflicts')
+      } else {
+        await doImport(selected)
+      }
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const resolveConflict = (entryId, resolution) => {
+    setConflicts(prev => prev.map(c =>
+      c.entry.id === entryId ? { ...c, resolution } : c
+    ))
+  }
+
+  const handleImportWithResolutions = async () => {
+    // Entradas selecionadas que NÃO são duplicatas, ou que o usuário resolveu como 'import'
+    const conflictIds = new Set(conflicts.map(c => c.entry.id))
+    const importConflicts = new Set(conflicts.filter(c => c.resolution === 'import').map(c => c.entry.id))
+
+    const toImport = entries.filter(e =>
+      e.selected && (!conflictIds.has(e.id) || importConflicts.has(e.id))
+    )
+    await doImport(toImport)
+  }
+
+  const doImport = async (toImport) => {
     setSaving(true)
     let imported = 0, errors = 0
-    for (const entry of entries.filter(e => e.selected)) {
+    for (const entry of toImport) {
       try {
         const d = new Date(entry.date + 'T12:00:00')
         const base = {
@@ -522,7 +701,7 @@ export default function Import() {
     setSaving(false)
     setDone({ imported, errors })
     setStep('upload')
-    setRows([]); setEntries([]); setFileName('')
+    setRows([]); setEntries([]); setFileName(''); setConflicts([])
   }
 
   const colOptions = (label = '— Ignorar') => [
@@ -754,14 +933,127 @@ export default function Import() {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep('map')} className="btn-secondary flex items-center gap-2">
+            <button onClick={() => setStep('bank_confirm')} className="btn-secondary flex items-center gap-2">
               <ChevronLeft size={16} /> Voltar
             </button>
-            <button onClick={handleImport} disabled={saving || selectedCount === 0}
+            <button onClick={handleCheckDuplicates} disabled={checking || saving || selectedCount === 0}
               className="btn-primary flex-1 flex items-center justify-center gap-2">
+              {checking
+                ? <><Loader2 size={16} className="animate-spin" /> Verificando...</>
+                : <><Check size={16} /> Importar {selectedCount} lançamento(s)</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP: Resolução de duplicatas ── */}
+      {step === 'conflicts' && (
+        <div className="space-y-4">
+          {/* Cabeçalho */}
+          <div className="rounded-2xl bg-amber-500/8 border border-amber-500/20 p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <GitMerge size={18} className="text-amber-400 shrink-0" />
+              <p className="text-amber-300 font-semibold text-sm">
+                {conflicts.length} lançamento(s) precisam de atenção
+              </p>
+            </div>
+            <p className="text-gray-400 text-xs">
+              Encontramos registros parecidos já cadastrados. Para cada um, escolha o que fazer.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {conflicts.map(({ entry, existing, tier, dayDiff, kwOverlap, resolution }) => {
+              const cfg = TIER_CONFIG[tier]
+              return (
+                <div key={entry.id} className={`rounded-2xl border p-3 space-y-3 ${cfg.border} ${cfg.bg}`}>
+                  {/* Badge de confiança */}
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
+                      {cfg.label}
+                    </span>
+                    <span className="text-gray-500 text-[10px]">
+                      {tier === 'definite' && 'data e valor idênticos'}
+                      {tier === 'likely' && kwOverlap && `nome parecido · ${dayDiff === 0 ? 'mesma data' : `${dayDiff}d de diferença`}`}
+                      {tier === 'likely' && !kwOverlap && `data próxima (${dayDiff}d)`}
+                      {tier === 'possible' && `mesmo valor no mês`}
+                    </span>
+                  </div>
+
+                  {/* Comparação lado a lado */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-dark-700/80 rounded-xl p-2.5">
+                      <p className="text-gray-500 font-medium mb-1">📋 No extrato</p>
+                      <p className="text-white font-medium truncate leading-tight">{entry.description || '—'}</p>
+                      <p className="text-gray-500 mt-0.5">{entry.date?.split('-').reverse().join('/')}</p>
+                      <p className={`font-bold mt-0.5 ${entry.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {entry.type === 'income' ? '+' : '-'}{formatBRL(entry.amount)}
+                      </p>
+                    </div>
+                    <div className="bg-dark-700/80 rounded-xl p-2.5">
+                      <p className="text-gray-500 font-medium mb-1">✅ Já cadastrado</p>
+                      <p className="text-white font-medium truncate leading-tight">{existing.description || '—'}</p>
+                      <p className="text-gray-500 mt-0.5">{existing.date?.split('-').reverse().join('/')}</p>
+                      <p className={`font-bold mt-0.5 ${entry.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {entry.type === 'income' ? '+' : '-'}{formatBRL(existing.amount)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Botões de resolução */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => resolveConflict(entry.id, 'skip')}
+                      className={`flex-1 text-xs py-2 px-3 rounded-xl border font-medium transition-all ${
+                        resolution === 'skip'
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                          : 'bg-dark-700/60 border-white/10 text-gray-400 hover:border-white/25'
+                      }`}
+                    >
+                      {resolution === 'skip' ? '✓ ' : ''}Manter existente
+                    </button>
+                    <button
+                      onClick={() => resolveConflict(entry.id, 'import')}
+                      className={`flex-1 text-xs py-2 px-3 rounded-xl border font-medium transition-all ${
+                        resolution === 'import'
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-dark-700/60 border-white/10 text-gray-400 hover:border-white/25'
+                      }`}
+                    >
+                      {resolution === 'import' ? '✓ ' : ''}Importar mesmo assim
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Resumo */}
+          {(() => {
+            const skipped = conflicts.filter(c => c.resolution === 'skip').length
+            const reImported = conflicts.filter(c => c.resolution === 'import').length
+            const normalSelected = entries.filter(e => e.selected).length - conflicts.length
+            const total = normalSelected + reImported
+            return (
+              <div className="card border border-white/8 text-xs text-gray-400 flex items-center justify-between">
+                <span><span className="text-white font-medium">{total}</span> lançamento(s) serão importados</span>
+                {skipped > 0 && <span className="text-gray-600">{skipped} ignorado(s)</span>}
+              </div>
+            )
+          })()}
+
+          <div className="flex gap-3">
+            <button onClick={() => setStep('preview')} className="btn-secondary flex items-center gap-2">
+              <ChevronLeft size={16} /> Voltar
+            </button>
+            <button
+              onClick={handleImportWithResolutions}
+              disabled={saving}
+              className="btn-primary flex-1 flex items-center justify-center gap-2"
+            >
               {saving
                 ? <><Loader2 size={16} className="animate-spin" /> Importando...</>
-                : <><Check size={16} /> Importar {selectedCount} lançamento(s)</>}
+                : <><Check size={16} /> Confirmar importação</>}
             </button>
           </div>
         </div>
