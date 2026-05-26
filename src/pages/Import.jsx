@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import BackButton from '../components/BackButton'
 import { Upload, FileText, ChevronRight, ChevronLeft, Check, AlertCircle, Loader2, GitMerge } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { addIncome, addExpense, supabase } from '../lib/supabase'
+import { addIncome, addExpense, supabase, getUserCategories } from '../lib/supabase'
 import { format } from 'date-fns'
+import { DEFAULT_CATEGORIES } from '../data/defaultCategories'
 
 const formatBRL = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -47,8 +48,7 @@ function hasKeywordOverlap(desc1, desc2) {
 
 // Níveis de confiança:
 //   'definite' → mesma data + mesmo valor
-//   'likely'   → mesmo valor + keyword match (≤45 dias) OU data próxima (≤3 dias)
-//   'possible' → mesmo valor + mesmo mês (apenas para valores ≥ R$5)
+//   'likely'   → mesmo valor + keyword match (≤60 dias) OU data próxima (≤3 dias)
 function calcDuplicateMatch(entry, existing) {
   // Valor deve bater (tolerância de 1 centavo)
   if (Math.abs(Number(entry.amount) - Number(existing.amount)) >= 0.011) return null
@@ -56,19 +56,17 @@ function calcDuplicateMatch(entry, existing) {
   const d1 = new Date(entry.date + 'T12:00:00')
   const d2 = new Date(existing.date + 'T12:00:00')
   const dayDiff = Math.abs((d1 - d2) / 86_400_000)
-  const sameMonth = d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()
   const kwOverlap = hasKeywordOverlap(entry.description, existing.description)
 
   let tier = null
   if (dayDiff === 0) {
     tier = 'definite'                              // data + valor idênticos
-  } else if (kwOverlap && dayDiff <= 45) {
-    tier = 'likely'                                // mesma palavra-chave, até 45 dias
+  } else if (kwOverlap && dayDiff <= 60) {
+    tier = 'likely'                                // mesma palavra-chave, até 60 dias
   } else if (dayDiff <= 3) {
-    tier = 'likely'                                // data próxima (assentamento bancário), sem keyword
-  } else if (sameMonth && Number(entry.amount) >= 5) {
-    tier = 'possible'                              // mesmo mês + mesmo valor (≥ R$5)
+    tier = 'likely'                                // data próxima (assentamento bancário)
   }
+  // Sem tier "possible" — evita falsos positivos por coincidência de valor
 
   return tier ? { tier, dayDiff, kwOverlap } : null
 }
@@ -76,7 +74,6 @@ function calcDuplicateMatch(entry, existing) {
 const TIER_CONFIG = {
   definite: {
     label: 'Duplicata provável',
-    sublabel: 'Mesmo valor e data',
     border: 'border-red-500/30',
     bg: 'bg-red-500/8',
     badge: 'bg-red-500/15 text-red-300',
@@ -84,19 +81,10 @@ const TIER_CONFIG = {
   },
   likely: {
     label: 'Possível duplicata',
-    sublabel: 'Mesmo valor + nome parecido ou data próxima',
     border: 'border-amber-500/30',
     bg: 'bg-amber-500/8',
     badge: 'bg-amber-500/15 text-amber-300',
     defaultResolution: 'skip',
-  },
-  possible: {
-    label: 'Valor coincidente',
-    sublabel: 'Mesmo valor no mês — verifique',
-    border: 'border-blue-500/30',
-    bg: 'bg-blue-500/8',
-    badge: 'bg-blue-500/15 text-blue-300',
-    defaultResolution: 'import',    // menos certeza → padrão é importar
   },
 }
 
@@ -448,17 +436,14 @@ function detectBank(rows, hIdx) {
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const EXPENSE_CATS = [
-  { value: 'variable', label: '🛒 Variável' },
-  { value: 'fixed', label: '🏠 Fixa' },
-  { value: 'credit_card', label: '💳 Cartão' },
-]
+// EXPENSE_CATS é carregado dinamicamente dentro do componente (categorias do usuário)
+
 const INCOME_CATS = [
-  { value: 'salary', label: '💼 Salário' },
-  { value: 'other', label: '💰 Outro' },
-  { value: 'freelance', label: '💻 Freelance' },
-  { value: 'bonus', label: '🎁 Bônus' },
+  { value: 'salary',     label: '💼 Salário' },
+  { value: 'freelance',  label: '💻 Freelance' },
+  { value: 'bonus',      label: '🎁 Bônus' },
   { value: 'investment', label: '📈 Investimento' },
+  { value: 'other',      label: '💰 Outro' },
 ]
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -480,6 +465,17 @@ export default function Import() {
   const [detectedBank,  setDetectedBank]  = useState(null)   // perfil detectado
   const [selectedBank,  setSelectedBank]  = useState(null)   // banco escolhido pelo usuário
   const [conflicts,     setConflicts]     = useState([])     // duplicatas detectadas
+  const [expenseCats,   setExpenseCats]   = useState([])     // categorias de despesa do usuário
+
+  // Carrega categorias do usuário (padrão + customizadas)
+  useEffect(() => {
+    if (!user) return
+    getUserCategories(user.id).then(({ data }) => {
+      const defaults = DEFAULT_CATEGORIES.map(c => ({ value: c.label, label: `${c.emoji} ${c.label}` }))
+      const custom   = (data || []).map(c => ({ value: c.label, label: `${c.emoji} ${c.label}` }))
+      setExpenseCats([...defaults, ...custom])
+    })
+  }, [user])
 
   const numCols = rows.length > 0 ? Math.max(...rows.slice(0, 15).map(r => r.length)) : 0
   const headerRow = rows[headerIdx] || []
@@ -542,7 +538,7 @@ export default function Import() {
             description: rawDesc,
             amount,
             type,
-            category: type === 'income' ? 'other' : 'variable',
+            category: type === 'income' ? 'other' : (expenseCats[0]?.value || 'Outro'),
             selected: true,
             dateError: !date,
           }]
@@ -558,7 +554,7 @@ export default function Import() {
             description: rawDesc,
             amount: Math.abs(amount),
             type: isExpense ? 'expense' : 'income',
-            category: isExpense ? 'credit_card' : 'other',
+            category: isExpense ? (expenseCats[0]?.value || 'Outro') : 'other',
             selected: isExpense, // pagamentos/estornos vêm desmarcados por padrão
             dateError: !date,
           }]
@@ -574,7 +570,7 @@ export default function Import() {
             description: rawDesc,
             amount: Math.abs(amount),
             type: isExpense ? 'expense' : 'income',
-            category: isExpense ? 'variable' : 'other',
+            category: isExpense ? (expenseCats[0]?.value || 'Outro') : 'other',
             selected: true,
             dateError: !date,
             amountError: amount === 0,
@@ -692,7 +688,7 @@ export default function Import() {
         if (entry.type === 'income') {
           await addIncome({ ...base, category: entry.category })
         } else {
-          await addExpense({ ...base, category: entry.category, is_recurring: entry.category === 'fixed' })
+          await addExpense({ ...base, category: entry.category, is_recurring: false })
         }
         imported++
       } catch { errors++ }
@@ -910,7 +906,7 @@ export default function Import() {
                       <select value={entry.type}
                         onChange={e => updateEntry(entry.id, {
                           type: e.target.value,
-                          category: e.target.value === 'income' ? 'other' : 'variable',
+                          category: e.target.value === 'income' ? 'other' : (expenseCats[0]?.value || 'Outro'),
                         })}
                         className="bg-dark-600 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white">
                         <option value="expense">💸 Despesa</option>
@@ -921,7 +917,7 @@ export default function Import() {
                       <select value={entry.category}
                         onChange={e => updateEntry(entry.id, { category: e.target.value })}
                         className="bg-dark-600 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white">
-                        {(entry.type === 'expense' ? EXPENSE_CATS : INCOME_CATS).map(c => (
+                        {(entry.type === 'expense' ? expenseCats : INCOME_CATS).map(c => (
                           <option key={c.value} value={c.value}>{c.label}</option>
                         ))}
                       </select>
