@@ -65,6 +65,54 @@ export const deleteExpense = async (id) => {
   return { error }
 }
 
+// Apaga todas as receitas de um mês
+export const deleteAllIncome = async (userId, month, year) => {
+  const { error } = await supabase
+    .from('income').delete()
+    .eq('user_id', userId).eq('month', month).eq('year', year)
+  return { error }
+}
+
+// Apaga todas as despesas NÃO-cartão (fixas + variáveis) + gastos diários de débito/dinheiro
+export const deleteAllNonCreditExpenses = async (userId, month, year) => {
+  // Despesas fixas e variáveis (expenses table)
+  const { error: e1 } = await supabase
+    .from('expenses').delete()
+    .eq('user_id', userId).eq('month', month).eq('year', year)
+    .neq('category', 'credit_card')
+
+  // Gastos diários de débito/dinheiro (daily_spending table)
+  const lastDay = new Date(year, month, 0).getDate()
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+  const endDate   = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  const { error: e2 } = await supabase
+    .from('daily_spending').delete()
+    .eq('user_id', userId).gte('date', startDate).lte('date', endDate)
+    .neq('payment_method', 'credit_card')
+
+  return { error: e1 || e2 }
+}
+
+// Apaga apenas despesas de cartão de crédito + gastos diários de cartão
+export const deleteAllCreditExpenses = async (userId, month, year) => {
+  // Parcelas/compras de cartão (expenses table)
+  const { error: e1 } = await supabase
+    .from('expenses').delete()
+    .eq('user_id', userId).eq('month', month).eq('year', year)
+    .eq('category', 'credit_card')
+
+  // Gastos diários de cartão (daily_spending table)
+  const lastDay = new Date(year, month, 0).getDate()
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+  const endDate   = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  const { error: e2 } = await supabase
+    .from('daily_spending').delete()
+    .eq('user_id', userId).gte('date', startDate).lte('date', endDate)
+    .eq('payment_method', 'credit_card')
+
+  return { error: e1 || e2 }
+}
+
 export const payExpense = async (id) => {
   const { data, error } = await supabase
     .from('expenses')

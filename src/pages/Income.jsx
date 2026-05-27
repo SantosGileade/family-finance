@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, TrendingUp, Loader2, X, DollarSign, Pencil } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, addIncome, updateIncome, deleteIncome } from '../lib/supabase'
+import { getIncome, addIncome, updateIncome, deleteIncome, deleteAllIncome } from '../lib/supabase'
 import MonthPicker from '../components/MonthPicker'
 import CurrencyInput, { parseCurrency } from '../components/CurrencyInput'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -36,6 +36,8 @@ export default function Income() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
   const [editingId, setEditingId] = useState(null)
+  const [clearAllConfirm, setClearAllConfirm] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   const [form, setForm] = useState({
     description: '',
@@ -110,6 +112,15 @@ export default function Income() {
     window.dispatchEvent(new Event('finance-updated'))
   }
 
+  const handleClearAll = async () => {
+    setClearing(true)
+    await deleteAllIncome(user.id, month, year)
+    setItems([])
+    setClearAllConfirm(false)
+    setClearing(false)
+    window.dispatchEvent(new Event('finance-updated'))
+  }
+
   const total = items.reduce((s, i) => s + Number(i.amount), 0)
 
   const catEmoji = (cat) => INCOME_CATEGORIES.find(c => c.value === cat)?.emoji || '💰'
@@ -142,6 +153,16 @@ export default function Income() {
         <button onClick={openModal} className="btn-primary w-full mt-4">
           <Plus size={18} /> {t('Adicionar renda · Add income')}
         </button>
+
+        {/* Botão discreto de limpar */}
+        {items.length > 0 && (
+          <button
+            onClick={() => setClearAllConfirm(true)}
+            className="flex items-center gap-1.5 mt-3 mx-auto text-xs text-red-400/50 hover:text-red-400 transition-colors"
+          >
+            <Trash2 size={11} /> Limpar toda a renda do mês
+          </button>
+        )}
       </div>
 
       {/* List */}
@@ -238,13 +259,47 @@ export default function Income() {
         </div>
       )}
 
-      {/* Confirm delete */}
+      {/* Confirm delete (individual) */}
       {confirmId && (
         <ConfirmDialog
           message="Essa entrada de renda será removida permanentemente."
           onConfirm={() => handleDelete(confirmId)}
           onCancel={() => setConfirmId(null)}
         />
+      )}
+
+      {/* Confirm clear all */}
+      {clearAllConfirm && (
+        <div className="modal-overlay" onClick={() => setClearAllConfirm(false)}>
+          <div className="modal-content max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="w-14 h-14 bg-red-500/15 rounded-2xl flex items-center justify-center text-2xl">
+                🗑️
+              </div>
+              <div>
+                <p className="text-white font-semibold text-base">Limpar toda a renda do mês</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  Isso vai remover <span className="text-white font-semibold">{items.length} entrada(s)</span> de{' '}
+                  <span className="text-emerald-400 font-semibold">{formatBRL(total)}</span> do mês atual.
+                </p>
+                <p className="text-gray-600 text-xs mt-1 italic">Esta ação não pode ser desfeita.</p>
+              </div>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setClearAllConfirm(false)} className="btn-secondary flex-1">
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleClearAll}
+                  disabled={clearing}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2.5 rounded-xl
+                             transition-all flex items-center gap-2 justify-center active:scale-95 disabled:opacity-60"
+                >
+                  {clearing ? <><Loader2 size={15} className="animate-spin" /> Limpando...</> : <><Trash2 size={15} /> Limpar tudo</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal */}

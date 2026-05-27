@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil, CheckCircle, Clock } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getExpenses, addExpense, updateExpense, deleteExpense, payExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending } from '../lib/supabase'
+import { getExpenses, addExpense, updateExpense, deleteExpense, payExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending, deleteAllNonCreditExpenses, deleteAllCreditExpenses } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
 import { usePlanGate } from '../contexts/PlanGateContext'
 import MonthPicker from '../components/MonthPicker'
@@ -53,6 +53,8 @@ export default function Expenses() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
+  const [clearConfirm, setClearConfirm] = useState(null)  // 'expenses' | 'credit' | null
+  const [clearing, setClearing] = useState(false)
 
   const [form, setForm] = useState({
     description: '',
@@ -279,6 +281,22 @@ export default function Expenses() {
     window.dispatchEvent(new Event('finance-updated'))
   }
 
+  const handleClearAll = async () => {
+    setClearing(true)
+    if (clearConfirm === 'expenses') {
+      await deleteAllNonCreditExpenses(user.id, month, year)
+      setItems(prev => prev.filter(i => i.category === 'credit_card'))
+      setDailyCashItems([])
+    } else if (clearConfirm === 'credit') {
+      await deleteAllCreditExpenses(user.id, month, year)
+      setItems(prev => prev.filter(i => i.category !== 'credit_card'))
+      setDailyCardItems([])
+    }
+    setClearConfirm(null)
+    setClearing(false)
+    window.dispatchEvent(new Event('finance-updated'))
+  }
+
   // Build filtered list depending on active tab
   const filteredExpenses = tab === 'all' ? items : items.filter(i => i.category === tab)
 
@@ -326,6 +344,32 @@ export default function Expenses() {
         <Plus size={18} /> {t('Adicionar despesa · Add expense')}
       </button>
 
+      {/* Botões discretos de limpeza */}
+      {(items.length > 0 || dailyCashItems.length > 0 || dailyCardItems.length > 0) && (
+        <div className="flex items-center justify-center gap-4">
+          {(items.filter(i => i.category !== 'credit_card').length > 0 || dailyCashItems.length > 0) && (
+            <button
+              onClick={() => setClearConfirm('expenses')}
+              className="flex items-center gap-1.5 text-xs text-red-400/50 hover:text-red-400 transition-colors"
+            >
+              <Trash2 size={11} /> Limpar despesas
+            </button>
+          )}
+          {(items.filter(i => i.category === 'credit_card').length > 0 || dailyCardItems.length > 0) && (
+            <>
+              {(items.filter(i => i.category !== 'credit_card').length > 0 || dailyCashItems.length > 0) && (
+                <span className="text-gray-700 text-xs">·</span>
+              )}
+              <button
+                onClick={() => setClearConfirm('credit')}
+                className="flex items-center gap-1.5 text-xs text-red-400/50 hover:text-red-400 transition-colors"
+              >
+                <Trash2 size={11} /> Limpar cartão
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
@@ -524,13 +568,70 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* Confirm delete */}
+      {/* Confirm delete (individual) */}
       {confirmId && (
         <ConfirmDialog
           message="Essa despesa será removida permanentemente."
           onConfirm={handleDelete}
           onCancel={() => setConfirmId(null)}
         />
+      )}
+
+      {/* Confirm clear all (expenses ou cartão) */}
+      {clearConfirm && (
+        <div className="modal-overlay" onClick={() => setClearConfirm(null)}>
+          <div className="modal-content max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="w-14 h-14 bg-red-500/15 rounded-2xl flex items-center justify-center text-2xl">
+                {clearConfirm === 'credit' ? '💳' : '🗑️'}
+              </div>
+              <div>
+                {clearConfirm === 'expenses' ? (
+                  <>
+                    <p className="text-white font-semibold text-base">Limpar despesas do mês</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Remove todas as despesas <span className="text-blue-400">fixas</span>,{' '}
+                      <span className="text-yellow-400">variáveis</span> e{' '}
+                      <span className="text-yellow-400">gastos diários de débito</span> deste mês.
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      {items.filter(i => i.category !== 'credit_card').length + dailyCashItems.length} lançamento(s) ·{' '}
+                      {formatBRL(totalFixed + totalVar)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-white font-semibold text-base">Limpar cartão de crédito</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Remove todas as despesas e gastos diários de{' '}
+                      <span className="text-red-400">cartão de crédito</span> deste mês.
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      {items.filter(i => i.category === 'credit_card').length + dailyCardItems.length} lançamento(s) ·{' '}
+                      {formatBRL(totalCard)}
+                    </p>
+                  </>
+                )}
+                <p className="text-gray-600 text-xs mt-2 italic">Esta ação não pode ser desfeita.</p>
+              </div>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setClearConfirm(null)} className="btn-secondary flex-1">
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleClearAll}
+                  disabled={clearing}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2.5 rounded-xl
+                             transition-all flex items-center gap-2 justify-center active:scale-95 disabled:opacity-60"
+                >
+                  {clearing
+                    ? <><Loader2 size={15} className="animate-spin" /> Limpando...</>
+                    : <><Trash2 size={15} /> Limpar tudo</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal */}

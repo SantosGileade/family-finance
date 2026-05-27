@@ -56,17 +56,21 @@ function calcDuplicateMatch(entry, existing) {
   const d1 = new Date(entry.date + 'T12:00:00')
   const d2 = new Date(existing.date + 'T12:00:00')
   const dayDiff = Math.abs((d1 - d2) / 86_400_000)
+  // Duplicatas só fazem sentido dentro do MESMO mês/ano
+  // Pagamentos recorrentes (ex: PIX todo mês da mesma pessoa) NÃO são duplicatas
+  const sameMonth = d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()
   const kwOverlap = hasKeywordOverlap(entry.description, existing.description)
+
+  if (!sameMonth) return null  // meses diferentes → jamais é duplicata
 
   let tier = null
   if (dayDiff === 0) {
-    tier = 'definite'                              // data + valor idênticos
-  } else if (kwOverlap && dayDiff <= 60) {
-    tier = 'likely'                                // mesma palavra-chave, até 60 dias
+    tier = 'definite'         // data + valor idênticos
+  } else if (kwOverlap) {
+    tier = 'likely'           // mesma palavra-chave no mesmo mês
   } else if (dayDiff <= 3) {
-    tier = 'likely'                                // data próxima (assentamento bancário)
+    tier = 'likely'           // data próxima (assentamento bancário)
   }
-  // Sem tier "possible" — evita falsos positivos por coincidência de valor
 
   return tier ? { tier, dayDiff, kwOverlap } : null
 }
@@ -446,33 +450,66 @@ const INCOME_CATS = [
   { value: 'other',      label: '💰 Outro' },
 ]
 
+// ── Session persistence ───────────────────────────────────────────────────────
+// Preserva o estado de preview/conflitos ao navegar para outra tela e voltar
+
+const SESSION_KEY = 'import_draft_v1'
+
+function loadDraft() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+function saveDraft(data) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)) } catch {}
+}
+
+function clearDraft() {
+  try { sessionStorage.removeItem(SESSION_KEY) } catch {}
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Import() {
   const { user } = useAuth()
   const fileRef = useRef()
 
-  const [step,          setStep]          = useState('upload')
+  // Restaura rascunho salvo (se o usuário navegou para outra tela e voltou)
+  const draft = loadDraft()
+  const hasDraft = ['preview', 'conflicts'].includes(draft.step)
+
+  const [step,          setStep]          = useState(hasDraft ? draft.step : 'upload')
   const [rows,          setRows]          = useState([])
-  const [fileName,      setFileName]      = useState('')
+  const [fileName,      setFileName]      = useState(hasDraft ? (draft.fileName || '') : '')
   const [headerIdx,     setHeaderIdx]     = useState(0)
   const [colMap,        setColMap]        = useState({ dateCol: 0, descCol: 1, amountCol: 2, inCol: -1, outCol: -1, mode: 'single' })
-  const [entries,       setEntries]       = useState([])
+  const [entries,       setEntries]       = useState(hasDraft ? (draft.entries || []) : [])
   const [saving,        setSaving]        = useState(false)
   const [checking,      setChecking]      = useState(false)
   const [done,          setDone]          = useState(null)
   const [dragOver,      setDragOver]      = useState(false)
-  const [detectedBank,  setDetectedBank]  = useState(null)   // perfil detectado
-  const [selectedBank,  setSelectedBank]  = useState(null)   // banco escolhido pelo usuário
-  const [conflicts,     setConflicts]     = useState([])     // duplicatas detectadas
+  const [detectedBank,  setDetectedBank]  = useState(
+    hasDraft && draft.detectedBankId ? BANK_PROFILES.find(b => b.id === draft.detectedBankId) || null : null
+  )
+  const [selectedBank,  setSelectedBank]  = useState(null)
+  const [conflicts,     setConflicts]     = useState(hasDraft ? (draft.conflicts || []) : [])
   const [expenseCats,   setExpenseCats]   = useState([])     // categorias de despesa do usuário
+
+  // Persiste o rascunho sempre que o estado relevante muda
+  useEffect(() => {
+    if (!['preview', 'conflicts'].includes(step)) { clearDraft(); return }
+    saveDraft({ step, entries, conflicts, fileName, detectedBankId: detectedBank?.id })
+  }, [step, entries, conflicts])
 
   // Carrega categorias do usuário (padrão + customizadas)
   useEffect(() => {
     if (!user) return
     getUserCategories(user.id).then(({ data }) => {
+      // DEFAULT_CATEGORIES usa 'label', user_categories usa 'name'
       const defaults = DEFAULT_CATEGORIES.map(c => ({ value: c.label, label: `${c.emoji} ${c.label}` }))
-      const custom   = (data || []).map(c => ({ value: c.label, label: `${c.emoji} ${c.label}` }))
+      const custom   = (data || []).map(c => ({ value: c.name, label: `${c.emoji} ${c.name}` }))
       setExpenseCats([...defaults, ...custom])
     })
   }, [user])
@@ -586,25 +623,29 @@ export default function Import() {
 
   const selectedCount = entries.filter(e => e.selected).length
 
-  // Busca registros existentes num range de datas (±45 dias do import)
+  // Busca registros existentes APENAS nos meses que aparecem no extrato importado
+  // (sem buffer de dias — pagamentos recorrentes de outros meses não são duplicatas)
   const fetchExisting = async (selected) => {
     if (!selected.length) return { allExpenses: [], allIncome: [] }
-    const dates = selected.map(e => e.date).sort()
-    const minD = new Date(dates[0] + 'T12:00:00')
-    const maxD = new Date(dates[dates.length - 1] + 'T12:00:00')
-    minD.setDate(minD.getDate() - 45)
-    maxD.setDate(maxD.getDate() + 45)
-    const startStr = minD.toISOString().slice(0, 10)
-    const endStr   = maxD.toISOString().slice(0, 10)
 
-    const { data: exp } = await supabase
-      .from('expenses').select('id,date,amount,description')
-      .eq('user_id', user.id).gte('date', startStr).lte('date', endStr)
-    const { data: inc } = await supabase
-      .from('income').select('id,date,amount,description')
-      .eq('user_id', user.id).gte('date', startStr).lte('date', endStr)
+    const monthYears = [...new Set(selected.map(e => {
+      const d = new Date(e.date + 'T12:00:00')
+      return `${d.getMonth() + 1}-${d.getFullYear()}`
+    }))]
 
-    return { allExpenses: exp || [], allIncome: inc || [] }
+    let allExpenses = [], allIncome = []
+    for (const my of monthYears) {
+      const [m, y] = my.split('-').map(Number)
+      const { data: exp } = await supabase
+        .from('expenses').select('id,date,amount,description')
+        .eq('user_id', user.id).eq('month', m).eq('year', y)
+      const { data: inc } = await supabase
+        .from('income').select('id,date,amount,description')
+        .eq('user_id', user.id).eq('month', m).eq('year', y)
+      if (exp) allExpenses = allExpenses.concat(exp)
+      if (inc) allIncome = allIncome.concat(inc)
+    }
+    return { allExpenses, allIncome }
   }
 
   const TIER_ORDER = { definite: 3, likely: 2, possible: 1 }
@@ -695,6 +736,7 @@ export default function Import() {
     }
     window.dispatchEvent(new Event('finance-updated'))
     setSaving(false)
+    clearDraft()
     setDone({ imported, errors })
     setStep('upload')
     setRows([]); setEntries([]); setFileName(''); setConflicts([])
@@ -850,6 +892,21 @@ export default function Import() {
       {/* ── STEP 3: Preview & import ── */}
       {step === 'preview' && (
         <div className="space-y-4">
+          {/* Banner quando sessão foi restaurada (sem o arquivo CSV em memória) */}
+          {rows.length === 0 && fileName && (
+            <div className="flex items-center gap-2 bg-blue-500/8 border border-blue-500/20 rounded-xl px-3 py-2.5">
+              <FileText size={14} className="text-blue-400 shrink-0" />
+              <p className="text-blue-300 text-xs flex-1">
+                Sessão restaurada · <span className="text-white font-medium">{fileName}</span>
+              </p>
+              <button
+                onClick={() => { clearDraft(); setStep('upload'); setEntries([]); setFileName('') }}
+                className="text-gray-500 hover:text-white text-xs transition-colors shrink-0"
+              >
+                Trocar arquivo
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-gray-400 text-sm">
               {entries.length} linhas · <span className="text-white font-semibold">{selectedCount} selecionadas</span>
@@ -929,8 +986,17 @@ export default function Import() {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep('bank_confirm')} className="btn-secondary flex items-center gap-2">
-              <ChevronLeft size={16} /> Voltar
+            <button
+              onClick={() => {
+                if (rows.length > 0) {
+                  setStep('bank_confirm')  // tem o arquivo → volta para confirmação
+                } else {
+                  clearDraft(); setStep('upload'); setEntries([]); setFileName('')  // restaurado → reinicia
+                }
+              }}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <ChevronLeft size={16} /> {rows.length > 0 ? 'Voltar' : 'Novo arquivo'}
             </button>
             <button onClick={handleCheckDuplicates} disabled={checking || saving || selectedCount === 0}
               className="btn-primary flex-1 flex items-center justify-center gap-2">
@@ -1039,7 +1105,16 @@ export default function Import() {
           })()}
 
           <div className="flex gap-3">
-            <button onClick={() => setStep('preview')} className="btn-secondary flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (rows.length > 0 || entries.length > 0) {
+                  setStep('preview')
+                } else {
+                  clearDraft(); setStep('upload'); setEntries([]); setConflicts([])
+                }
+              }}
+              className="btn-secondary flex items-center gap-2"
+            >
               <ChevronLeft size={16} /> Voltar
             </button>
             <button
