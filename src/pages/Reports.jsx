@@ -5,7 +5,7 @@ import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart2, Tag 
 import { useNavigate } from 'react-router-dom'
 import MonthPicker from '../components/MonthPicker'
 import { useAuth } from '../contexts/AuthContext'
-import { getDailySpending, getIncome, getCategoryLimits } from '../lib/supabase'
+import { getDailySpending, getExpenses, getIncome, getCategoryLimits } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
 
 const formatBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -16,12 +16,19 @@ const COLORS = ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 // "🍔 Alimentação" → "Alimentação" | "Restaurante" → "Restaurante"
 const stripEmoji = (str) => str.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '').trim()
 
-// Agrupa apenas gastos diários — categorias como Fixas/Variáveis ficam fora
-const groupByCategory = (dailyItems) => {
+const SYSTEM_CATS = new Set(['fixed', 'variable', 'credit_card'])
+
+// Agrupa gastos diários + despesas com categoria real (importadas/customizadas)
+const groupByCategory = (dailyItems, expenseItems = []) => {
   const map = {}
   dailyItems.forEach(d => {
     const key = d.description || 'Outros'
     map[key] = (map[key] || 0) + Number(d.amount)
+  })
+  expenseItems.forEach(e => {
+    if (e.category && !SYSTEM_CATS.has(e.category)) {
+      map[e.category] = (map[e.category] || 0) + Number(e.amount)
+    }
   })
   return map
 }
@@ -45,6 +52,8 @@ export default function Reports() {
 
   const [currDay,  setCurrDay]  = useState([])
   const [prevDay,  setPrevDay]  = useState([])
+  const [currExp,  setCurrExp]  = useState([])
+  const [prevExp,  setPrevExp]  = useState([])
   const [limitsMap, setLimitsMap] = useState({})
   const [monthIncome, setMonthIncome] = useState(0)
 
@@ -57,11 +66,15 @@ export default function Reports() {
     Promise.all([
       getDailySpending(user.id, month, year),
       getDailySpending(user.id, prevMonth, prevYear),
+      getExpenses(user.id, month, year),
+      getExpenses(user.id, prevMonth, prevYear),
       getCategoryLimits(user.id),
       getIncome(user.id, month, year),
-    ]).then(([cd, pd, lim, inc]) => {
+    ]).then(([cd, pd, ce, pe, lim, inc]) => {
       setCurrDay(cd.data || [])
       setPrevDay(pd.data || [])
+      setCurrExp(ce.data || [])
+      setPrevExp(pe.data || [])
       const lMap = {}
       ;(lim.data || []).forEach(l => { lMap[l.category_label] = l })
       setLimitsMap(lMap)
@@ -71,8 +84,8 @@ export default function Reports() {
     })
   }, [user, month, year])
 
-  const currCats  = groupByCategory(currDay)
-  const prevCats  = groupByCategory(prevDay)
+  const currCats  = groupByCategory(currDay, currExp)
+  const prevCats  = groupByCategory(prevDay, prevExp)
   const currTotal = Object.values(currCats).reduce((s, v) => s + v, 0)
   const prevTotal = Object.values(prevCats).reduce((s, v) => s + v, 0)
 

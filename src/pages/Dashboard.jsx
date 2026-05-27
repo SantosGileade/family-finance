@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   ChevronRight, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Wallet, CreditCard, Settings, X, Loader2
+  TrendingUp, TrendingDown, Wallet, CreditCard, Settings, X, Loader2, Shield
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -20,11 +20,22 @@ const formatBRL  = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'curre
 const COLORS     = ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316']
 const stripEmoji = (s) => String(s).replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '').trim()
 
-const groupByCategory = (items) => {
+// Categorias do sistema que NÃO representam categorias reais do usuário
+const SYSTEM_CATS = new Set(['fixed', 'variable', 'credit_card'])
+
+// Agrupa gastos diários + despesas com categoria real (importadas/customizadas)
+const groupByCategory = (dailyItems, expenseItems = []) => {
   const map = {}
-  items.forEach(d => {
+  // daily_spending: a descrição É o nome da categoria
+  dailyItems.forEach(d => {
     const k = d.description || 'Outros'
     map[k] = (map[k] || 0) + Number(d.amount)
+  })
+  // expenses importadas/manuais com categoria real (ex: "Mercado", "Tag", "Dog")
+  expenseItems.forEach(e => {
+    if (e.category && !SYSTEM_CATS.has(e.category)) {
+      map[e.category] = (map[e.category] || 0) + Number(e.amount)
+    }
   })
   return map
 }
@@ -283,9 +294,9 @@ export default function Dashboard() {
                      + prevDaily.reduce((s, d) => s + Number(d.amount), 0)
   const totalDiff    = prevTotalExp > 0 ? ((totalExpenses - prevTotalExp) / prevTotalExp) * 100 : 0
 
-  // Categorias
-  const currCats  = groupByCategory(daily)
-  const prevCats  = groupByCategory(prevDaily)
+  // Categorias — inclui daily_spending + expenses com categoria real (importadas/customizadas)
+  const currCats  = groupByCategory(daily, expenses)
+  const prevCats  = groupByCategory(prevDaily, prevExp)
   const currTotal = Object.values(currCats).reduce((s, v) => s + v, 0)
   const prevTotal = Object.values(prevCats).reduce((s, v) => s + v, 0)
   const catRanked = Object.entries(currCats).sort((a, b) => b[1] - a[1])
@@ -322,12 +333,24 @@ export default function Dashboard() {
     <div className="space-y-5 animate-fade-in pb-4">
 
       {/* ── HEADER ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="page-title">Dashboard</h1>
           <p className="text-gray-500 text-sm">{t('Visão geral · Overview')}</p>
         </div>
-        <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/admin')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
+                         bg-purple-500/15 border border-purple-500/20 text-purple-400
+                         hover:bg-purple-500/25 transition-all text-xs font-medium"
+            >
+              <Shield size={13} /> Admin
+            </button>
+          )}
+          <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
+        </div>
       </div>
 
       {/* ── 🥇 SALDO (principal) — slim ─────────────────────────── */}

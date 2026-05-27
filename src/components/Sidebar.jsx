@@ -1,8 +1,8 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, TrendingUp, CreditCard,
-  Calendar, Lightbulb, LogOut, FileUp
+  Calendar, Lightbulb, LogOut, FileUp, Tag, Shield
 } from 'lucide-react'
 
 const navItems = [
@@ -10,12 +10,14 @@ const navItems = [
   { to: '/income', icon: TrendingUp, label: 'Renda', en: 'Income' },
   { to: '/expenses', icon: CreditCard, label: 'Despesas', en: 'Expenses' },
   { to: '/daily', icon: Calendar, label: 'Gastos Diários', en: 'Daily Spend' },
+  { to: '/categories', icon: Tag, label: 'Categorias', en: 'Categories' },
   { to: '/import', icon: FileUp, label: 'Importar', en: 'Import CSV' },
   { to: '/tips', icon: Lightbulb, label: 'Dicas', en: 'Tips & Learn' },
 ]
 
 export default function Sidebar() {
   const { user, signOut, isAdmin } = useAuth()
+  const navigate = useNavigate()
 
   return (
     <aside className="hidden sm:flex flex-col w-64 bg-dark-900 border-r border-white/5 p-4">
@@ -69,6 +71,15 @@ export default function Sidebar() {
             {isAdmin && <p className="text-gray-500 text-xs">Família 👨‍👩</p>}
           </div>
         </div>
+        {isAdmin && (
+          <button
+            onClick={() => navigate('/admin')}
+            className="flex items-center gap-2 text-purple-400 hover:text-purple-300 text-sm px-2 py-1.5 w-full rounded-lg hover:bg-purple-500/10 transition-all duration-200 mb-1"
+          >
+            <Shield size={15} />
+            Painel Admin
+          </button>
+        )}
         <button
           onClick={signOut}
           className="flex items-center gap-2 text-gray-500 hover:text-red-400 text-sm px-2 py-1.5 w-full rounded-lg hover:bg-red-500/10 transition-all duration-200"
