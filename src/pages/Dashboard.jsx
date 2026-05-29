@@ -406,7 +406,10 @@ export default function Dashboard() {
           <div className="w-px bg-white/10 self-stretch" />
           <div className="flex items-center gap-1.5">
             <CreditCard size={11} className={cardAvailable >= 0 ? 'text-blue-400 shrink-0' : 'text-red-400 shrink-0'} />
-            <span className="text-gray-500 text-xs">Cartão</span>
+            <button
+              onClick={() => navigate('/expenses', { state: { tab: 'credit_card' } })}
+              className="text-gray-500 text-xs hover:text-blue-400 transition-colors"
+            >Cartão</button>
             <span className={`text-xs font-semibold ${cardAvailable >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
               {formatBRL(Math.max(cardAvailable, 0))} livre
             </span>

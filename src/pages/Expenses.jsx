@@ -39,6 +39,7 @@ export default function Expenses() {
   const t = useLang()
   const location = useLocation()
   const now = new Date()
+  const todayStr = format(now, 'yyyy-MM-dd')
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
 
@@ -218,6 +219,9 @@ export default function Expenses() {
       }
     } else {
       // Cria a despesa do mês atual
+      // Despesa com data futura fica pendente até ser descontada
+      const addedToday = format(new Date(), 'yyyy-MM-dd')
+      const isFutureExpense = form.date > addedToday
       await addExpense({
         user_id: user.id,
         description: form.description,
@@ -227,6 +231,7 @@ export default function Expenses() {
         month: enteredMonth,
         year: enteredYear,
         is_recurring: form.category === 'fixed',
+        ...(isFutureExpense && { status: 'pendente' }),
       })
 
       // Se marcada como recorrente, replica para os meses restantes do ano
@@ -265,6 +270,13 @@ export default function Expenses() {
       setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'pago' } : i))
       window.dispatchEvent(new Event('finance-updated'))
     }
+  }
+
+  // Remove despesa fixa auto-copiada que já foi paga de outra forma (ex: extrato)
+  const handleAlreadyPaid = async (id) => {
+    await deleteExpense(id)
+    setItems(prev => prev.filter(i => i.id !== id))
+    window.dispatchEvent(new Event('finance-updated'))
   }
 
   const handleDelete = async () => {
@@ -322,20 +334,29 @@ export default function Expenses() {
         <MonthPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y) }} />
       </div>
 
-      {/* Summary row */}
+      {/* Summary row — clicável para filtrar */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="card text-center p-3">
+        <button
+          onClick={() => setTab(tab === 'fixed' ? 'all' : 'fixed')}
+          className={`card text-center p-3 transition-all active:scale-95 ${tab === 'fixed' ? 'border-blue-500/40 bg-blue-500/10' : 'hover:border-blue-500/20'}`}
+        >
           <p className="text-blue-400 font-bold">{formatBRL(totalFixed)}</p>
-          <p className="text-gray-500 text-xs">🏠 Fixas</p>
-        </div>
-        <div className="card text-center p-3">
+          <p className={`text-xs ${tab === 'fixed' ? 'text-blue-400/70' : 'text-gray-500'}`}>🏠 Fixas</p>
+        </button>
+        <button
+          onClick={() => setTab(tab === 'variable' ? 'all' : 'variable')}
+          className={`card text-center p-3 transition-all active:scale-95 ${tab === 'variable' ? 'border-yellow-500/40 bg-yellow-500/10' : 'hover:border-yellow-500/20'}`}
+        >
           <p className="text-yellow-400 font-bold">{formatBRL(totalVar)}</p>
-          <p className="text-gray-500 text-xs">🛒 Variáveis</p>
-        </div>
-        <div className="card text-center p-3">
+          <p className={`text-xs ${tab === 'variable' ? 'text-yellow-400/70' : 'text-gray-500'}`}>🛒 Variáveis</p>
+        </button>
+        <button
+          onClick={() => setTab(tab === 'credit_card' ? 'all' : 'credit_card')}
+          className={`card text-center p-3 transition-all active:scale-95 ${tab === 'credit_card' ? 'border-red-500/40 bg-red-500/10' : 'hover:border-red-500/20'}`}
+        >
           <p className="text-red-400 font-bold">{formatBRL(totalCard)}</p>
-          <p className="text-gray-500 text-xs">💳 Cartão</p>
-        </div>
+          <p className={`text-xs ${tab === 'credit_card' ? 'text-red-400/70' : 'text-gray-500'}`}>💳 Cartão</p>
+        </button>
       </div>
 
 
@@ -371,25 +392,21 @@ export default function Expenses() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-        {TABS.map(tabItem => (
+      {/* Filtro ativo — exibe pill quando alguma categoria está selecionada */}
+      {tab !== 'all' && (
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500 text-xs">Filtrando:</span>
           <button
-            key={tabItem.key}
-            onClick={() => setTab(tabItem.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
-              tab === tabItem.key
-                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                : 'bg-dark-700 text-gray-400 hover:text-white border border-white/5'
-            }`}
+            onClick={() => setTab('all')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
+                       bg-emerald-500/15 text-emerald-400 border border-emerald-500/20
+                       hover:bg-emerald-500/25 transition-all"
           >
-            {tabItem.emoji} {t(tabItem.label)}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === tabItem.key ? 'bg-emerald-500/20' : 'bg-white/5'}`}>
-              {formatBRL(totalsMap[tabItem.key])}
-            </span>
+            {tab === 'fixed' ? '🏠 Fixas' : tab === 'variable' ? '🛒 Variáveis' : '💳 Cartão'}
+            <X size={11} />
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
       {/* List */}
       {loading ? (
@@ -421,34 +438,77 @@ export default function Expenses() {
               <div className="space-y-2">
                 {filteredExpenses.filter(i => i.status === 'pendente').map(item => {
                   const ci = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.variable
+                  const isFuture = item.date > todayStr
+                  // Formata a data futura como DD/MM
+                  const [, fMon, fDay] = item.date.split('-')
+                  const futureLabel = `${fDay}/${fMon}`
                   return (
                     <div key={`exp-${item.id}`}
-                      className="flex items-center gap-3 p-3 rounded-xl border
-                                 bg-amber-500/5 border-amber-500/15">
+                      className={`flex items-center gap-3 p-3 rounded-xl border ${
+                        isFuture
+                          ? 'bg-blue-500/5 border-blue-500/15'
+                          : 'bg-amber-500/5 border-amber-500/15'
+                      }`}>
                       <div className={`w-10 h-10 ${ci.bg} rounded-xl flex items-center justify-center text-lg shrink-0`}>
-                        {ci.emoji}
+                        {isFuture ? '📅' : ci.emoji}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-white font-medium text-sm truncate">{item.description}</p>
                           {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
+                          {isFuture && (
+                            <span className="text-xs bg-blue-500/15 text-blue-300 border border-blue-500/20 px-1.5 py-0.5 rounded-full">
+                              📅 Será descontada em {futureLabel}
+                            </span>
+                          )}
                         </div>
                         <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-amber-400 font-bold text-sm">{formatBRL(item.amount)}</p>
-                        <div className="flex gap-1 justify-end mt-1">
-                          <button
-                            onClick={() => handlePay(item.id)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
-                                       bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400
-                                       border border-emerald-500/30 rounded-lg transition-all active:scale-95"
-                          >
-                            <CheckCircle size={11} /> Pagar
-                          </button>
-                          <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
-                            <Trash2 size={12} />
-                          </button>
+                        <p className={`font-bold text-sm ${isFuture ? 'text-blue-400' : 'text-amber-400'}`}>
+                          {formatBRL(item.amount)}
+                        </p>
+                        <div className="flex gap-1 justify-end mt-1 flex-wrap">
+                          {isFuture ? (
+                            <>
+                              <button
+                                onClick={() => handlePay(item.id)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
+                                           bg-blue-500/15 hover:bg-blue-500/25 text-blue-300
+                                           border border-blue-500/30 rounded-lg transition-all active:scale-95"
+                              >
+                                <CheckCircle size={11} /> Descontar agora
+                              </button>
+                              <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handlePay(item.id)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
+                                           bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400
+                                           border border-emerald-500/30 rounded-lg transition-all active:scale-95"
+                              >
+                                <CheckCircle size={11} /> Pagar
+                              </button>
+                              {item.is_recurring && (
+                                <button
+                                  onClick={() => handleAlreadyPaid(item.id)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
+                                             bg-gray-500/15 hover:bg-gray-500/25 text-gray-400
+                                             border border-gray-500/30 rounded-lg transition-all active:scale-95"
+                                  title="Já registrei este pagamento de outra forma"
+                                >
+                                  ✓ Já paguei
+                                </button>
+                              )}
+                              <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
