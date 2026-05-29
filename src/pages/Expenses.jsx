@@ -74,14 +74,20 @@ export default function Expenses() {
     let expenses = expRes.data || []
     const allDaily = dailyRes.data || []
 
-    // Auto-copia despesas fixas do mês anterior quando o mês atual ainda não tem nenhuma
-    // Só faz isso para o mês atual (não para meses passados)
+    // Auto-copia despesas fixas do mês anterior quando o mês atual ainda não tem nenhuma.
+    // Só faz isso para o mês atual (não para meses passados).
+    // Usa localStorage para registrar que a cópia já foi processada, evitando que
+    // despesas removidas via "Já paguei" ressurjam ao recarregar a página.
     const now = new Date()
     const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
     const hasFixed = expenses.some(e => e.is_recurring && e.category === 'fixed')
+    const copyKey = `fc_${user.id}_${year}_${month}`
+    const copyAlreadyDone = !!localStorage.getItem(copyKey)
 
-    if (isCurrentMonth && !hasFixed && !isCopyingRef.current) {
+    if (isCurrentMonth && !hasFixed && !copyAlreadyDone && !isCopyingRef.current) {
       isCopyingRef.current = true
+      // Marca imediatamente para bloquear chamadas paralelas (Strict Mode / hot reload)
+      localStorage.setItem(copyKey, '1')
       const prevMonth = month === 1 ? 12 : month - 1
       const prevYear  = month === 1 ? year - 1 : year
 
@@ -272,10 +278,12 @@ export default function Expenses() {
     }
   }
 
-  // Remove despesa fixa auto-copiada que já foi paga de outra forma (ex: extrato)
+  // Remove despesa fixa auto-copiada que já foi paga de outra forma (ex: extrato).
+  // Também seta a flag de localStorage para que a auto-cópia não re-dispare ao recarregar.
   const handleAlreadyPaid = async (id) => {
     await deleteExpense(id)
     setItems(prev => prev.filter(i => i.id !== id))
+    localStorage.setItem(`fc_${user.id}_${year}_${month}`, '1')
     window.dispatchEvent(new Event('finance-updated'))
   }
 
