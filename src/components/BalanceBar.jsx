@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Wallet, CreditCard, RefreshCw, Settings, X, Loader2, Shield } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getIncome, getExpenses, getDailySpending, getProfile, upsertProfile, getAccounts } from '../lib/supabase'
+import { getIncome, getExpenses, getDailySpending, getProfile, upsertProfile, getAccounts, getAllCreditCardExpenses } from '../lib/supabase'
 import CurrencyInput, { parseCurrency } from './CurrencyInput'
 
 const formatBRL = (v) =>
@@ -38,21 +38,27 @@ export default function BalanceBar() {
     const prevMonth = month === 1 ? 12 : month - 1
     const prevYear  = month === 1 ? year - 1 : year
 
-    const [inc, exp, daily, pInc, pExp, pDay] = await Promise.all([
+    const [inc, exp, daily, pInc, pExp, pDay, allCardRes] = await Promise.all([
       getIncome(user.id, month, year),
       getExpenses(user.id, month, year),
       getDailySpending(user.id, month, year),
       getIncome(user.id, prevMonth, prevYear),
       getExpenses(user.id, prevMonth, prevYear),
       getDailySpending(user.id, prevMonth, prevYear),
+      getAllCreditCardExpenses(user.id),   // todas parcelas de cartão (todos os meses)
     ])
     const allExp     = exp.data || []
     const allDaily   = daily.data || []
+    const allCardAll = allCardRes.data || []
     const paidExp    = allExp.filter(e => !e.status || e.status === 'pago')
-    const totalCardExp   = paidExp.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+    // Limite do cartão: soma TODAS as parcelas não pagas de todos os meses
+    // (compra de R$1200 em 12x = R$1200 do limite, não só R$100)
+    const totalCardExp   = allCardAll.filter(e => e.status !== 'pago').reduce((s, e) => s + Number(e.amount), 0)
     const totalCardDaily = allDaily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
-    const currCash   = (paidExp.reduce((s, e) => s + Number(e.amount), 0) - totalCardExp)
-                     + (allDaily.reduce((s, d) => s + Number(d.amount), 0) - totalCardDaily)
+    // Saldo em conta: só despesas não-cartão pagas (cartão desconta só ao pagar a fatura)
+    const paidNonCard = paidExp.filter(e => e.category !== 'credit_card')
+    const currCash   = paidNonCard.reduce((s, e) => s + Number(e.amount), 0)
+                     + allDaily.filter(d => d.payment_method !== 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
 
     const pIncTotal  = (pInc.data || []).reduce((s, i) => s + Number(i.amount), 0)
     const pPaidExp   = (pExp.data || []).filter(e => !e.status || e.status === 'pago')

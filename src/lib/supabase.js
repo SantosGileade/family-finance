@@ -113,6 +113,41 @@ export const deleteAllCreditExpenses = async (userId, month, year) => {
   return { error: e1 || e2 }
 }
 
+// Deleta uma compra de cartão e TODAS as suas parcelas futuras.
+// Detecta o padrão "(N/M)" na descrição e remove todos os registros da mesma série.
+// Para compras à vista (sem padrão de parcela), deleta apenas o registro informado.
+export const deleteCreditCardSeries = async (userId, expense) => {
+  const match = expense.description?.match(/^(.+) \((\d+)\/(\d+)\)$/)
+  if (!match) {
+    // Compra à vista — deleta só este registro
+    const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+    return { error, deletedCount: 1 }
+  }
+  const [, base, , total] = match
+  // Busca todos os registros de cartão do usuário e filtra pela série (mesmo base + mesmo total)
+  const { data: all } = await supabase
+    .from('expenses').select('id, description')
+    .eq('user_id', userId).eq('category', 'credit_card')
+  const ids = (all || []).filter(e => {
+    const m = e.description?.match(/^(.+) \((\d+)\/(\d+)\)$/)
+    return m && m[1] === base && m[3] === total
+  }).map(e => e.id)
+  const toDelete = ids.length > 0 ? ids : [expense.id]
+  const { error } = await supabase.from('expenses').delete().in('id', toDelete)
+  return { error, deletedCount: toDelete.length }
+}
+
+// Busca TODAS as parcelas de cartão do usuário (todos os meses) para calcular
+// o limite total comprometido — não apenas o mês atual.
+export const getAllCreditCardExpenses = async (userId) => {
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('id, amount, status, date, month, year, description')
+    .eq('user_id', userId)
+    .eq('category', 'credit_card')
+  return { data, error }
+}
+
 export const payExpense = async (id) => {
   const { data, error } = await supabase
     .from('expenses')

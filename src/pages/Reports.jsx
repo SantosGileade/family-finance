@@ -18,7 +18,7 @@ const stripEmoji = (str) => str.replace(/^[\p{Emoji_Presentation}\p{Extended_Pic
 
 const SYSTEM_CATS = new Set(['fixed', 'variable', 'credit_card'])
 
-// Agrupa gastos diários + despesas com categoria real (importadas/customizadas)
+// Agrupa gastos diários + despesas com categoria real (importadas/customizadas) + cartão
 const groupByCategory = (dailyItems, expenseItems = []) => {
   const map = {}
   dailyItems.forEach(d => {
@@ -26,7 +26,9 @@ const groupByCategory = (dailyItems, expenseItems = []) => {
     map[key] = (map[key] || 0) + Number(d.amount)
   })
   expenseItems.forEach(e => {
-    if (e.category && !SYSTEM_CATS.has(e.category)) {
+    if (e.category === 'credit_card') {
+      map['💳 Cartão'] = (map['💳 Cartão'] || 0) + Number(e.amount)
+    } else if (e.category && !SYSTEM_CATS.has(e.category)) {
       map[e.category] = (map[e.category] || 0) + Number(e.amount)
     }
   })

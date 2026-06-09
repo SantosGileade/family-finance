@@ -19,9 +19,12 @@ export default function MonthPicker({ month, year, onChange }) {
   // Sincroniza displayYear quando year muda externamente
   useEffect(() => { setDisplayYear(year) }, [year])
 
-  const canGoNextYear = displayYear < now.getFullYear()
+  // Permite navegar até o mês seguinte ao atual
+  const maxM    = now.getMonth() + 2 > 12 ? 1  : now.getMonth() + 2   // mês máximo (1-12)
+  const maxYear = now.getMonth() + 2 > 12 ? now.getFullYear() + 1 : now.getFullYear()
+  const canGoNextYear = displayYear < maxYear
   const isDisabled = (m, y) =>
-    y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth() + 1)
+    y > maxYear || (y === maxYear && m > maxM)
 
   return (
     <div className="relative" ref={ref}>

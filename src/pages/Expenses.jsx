@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil, CheckCircle, Clock } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getExpenses, addExpense, updateExpense, deleteExpense, payExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending, deleteAllNonCreditExpenses, deleteAllCreditExpenses } from '../lib/supabase'
+import { getExpenses, addExpense, updateExpense, deleteExpense, payExpense, getDailySpending, addDailySpending, updateDailySpending, deleteDailySpending, deleteAllNonCreditExpenses, deleteAllCreditExpenses, getAllCreditCardExpenses, getProfile, deleteCreditCardSeries } from '../lib/supabase'
 import { useLang } from '../hooks/useLang'
 import { usePlanGate } from '../contexts/PlanGateContext'
 import MonthPicker from '../components/MonthPicker'
@@ -24,6 +24,7 @@ const CATEGORY_ICONS = {
   fixed: { emoji: '🏠', bg: 'bg-blue-500/15', text: 'text-blue-400' },
   variable: { emoji: '🛒', bg: 'bg-yellow-500/15', text: 'text-yellow-400' },
   credit_card: { emoji: '💳', bg: 'bg-red-500/15', text: 'text-red-400' },
+  '💳 Fatura Cartão': { emoji: '💳', bg: 'bg-red-500/15', text: 'text-red-400' },
 }
 
 const SUBCATEGORIES = {
@@ -56,6 +57,13 @@ export default function Expenses() {
   const [editingItem, setEditingItem] = useState(null)
   const [clearConfirm, setClearConfirm] = useState(null)  // 'expenses' | 'credit' | null
   const [clearing, setClearing] = useState(false)
+  const [showFaturaModal, setShowFaturaModal] = useState(false)
+  const [faturaLoading, setFaturaLoading] = useState(false)
+  const [faturaAmount, setFaturaAmount]   = useState('')
+  const [cardLimit, setCardLimit] = useState(0)
+  const [allCardCommitted, setAllCardCommitted] = useState(0)
+  const [limitError, setLimitError] = useState('')
+  const [futureCardItems, setFutureCardItems] = useState([])  // parcelas de outros meses
 
   const [form, setForm] = useState({
     description: '',
@@ -67,10 +75,24 @@ export default function Expenses() {
 
   const load = async () => {
     setLoading(true)
-    const [expRes, dailyRes] = await Promise.all([
+    const [expRes, dailyRes, profileRes, allCardRes] = await Promise.all([
       getExpenses(user.id, month, year),
       getDailySpending(user.id, month, year),
+      getProfile(user.id),
+      getAllCreditCardExpenses(user.id),
     ])
+    if (profileRes.data?.card_limit) setCardLimit(profileRes.data.card_limit)
+    const allCardData = allCardRes.data || []
+    const committed = allCardData
+      .filter(e => e.status !== 'pago')
+      .reduce((s, e) => s + Number(e.amount), 0)
+    setAllCardCommitted(committed)
+    // Parcelas de cartão em meses diferentes do mês sendo visualizado (pendentes)
+    const otherMonthItems = allCardData.filter(e =>
+      e.status !== 'pago' &&
+      !(e.month === month && e.year === year)
+    )
+    setFutureCardItems(otherMonthItems)
     let expenses = expRes.data || []
     const allDaily = dailyRes.data || []
 
@@ -156,12 +178,27 @@ export default function Expenses() {
   const closeModal = () => {
     setShowModal(false)
     setEditingItem(null)
+    setLimitError('')
     setForm({ description: '', amount: '', category: 'fixed', date: format(new Date(), 'yyyy-MM-dd') })
   }
+
+  // Limite disponível no cartão = limite total − todas as parcelas pendentes − gastos diários de cartão do mês
+  const cardAvailable = cardLimit - allCardCommitted - dailyCardItems.reduce((s, i) => s + Number(i.amount), 0)
 
   const handleAdd = async (e) => {
     e.preventDefault()
     if (!check()) return
+    setLimitError('')
+
+    // Bloqueia compra no cartão que ultrapasse o limite disponível
+    if (form.category === 'credit_card' && !editingItem) {
+      const purchaseTotal = parseCurrency(form.amount)
+      if (purchaseTotal > cardAvailable) {
+        setLimitError(`Limite insuficiente. Disponível: ${formatBRL(Math.max(cardAvailable, 0))}`)
+        return
+      }
+    }
+
     setSaving(true)
     const d = new Date(form.date + 'T12:00:00')
     const enteredMonth = d.getMonth() + 1
@@ -287,12 +324,67 @@ export default function Expenses() {
     window.dispatchEvent(new Event('finance-updated'))
   }
 
+  // Consolida todas as despesas de cartão do mês em uma única "Fatura Cartão" pendente.
+  // As compras individuais são deletadas; a fatura é uma despesa variável que,
+  // quando paga, desconta do saldo em conta (sem dupla contagem).
+  const handlePagarFatura = async () => {
+    const valorFatura = parseCurrency(faturaAmount)
+    if (!valorFatura || valorFatura <= 0) return
+    setFaturaLoading(true)
+    await deleteAllCreditExpenses(user.id, month, year)
+    const monthName = new Date(year, month - 1).toLocaleString('pt-BR', { month: 'short', year: 'numeric' })
+    const isParcial = valorFatura < totalCard
+    // Cria a fatura no valor escolhido pelo usuário
+    await addExpense({
+      user_id: user.id,
+      description: `Fatura Cartão – ${monthName}${isParcial ? ' (parcial)' : ''}`,
+      amount: valorFatura,
+      category: '💳 Fatura Cartão',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      month,
+      year,
+      is_recurring: false,
+      status: 'pendente',
+    })
+    // Se pagamento parcial, registra o restante como nova parcela de cartão pendente no mês
+    if (isParcial) {
+      const resto = Math.round((totalCard - valorFatura) * 100) / 100
+      await addExpense({
+        user_id: user.id,
+        description: `Restante fatura – ${monthName}`,
+        amount: resto,
+        category: 'credit_card',
+        date: format(new Date(), 'yyyy-MM-dd'),
+        month,
+        year,
+        is_recurring: false,
+        status: 'pendente',
+      })
+    }
+    setShowFaturaModal(false)
+    setFaturaLoading(false)
+    await load()
+    window.dispatchEvent(new Event('finance-updated'))
+  }
+
   const handleDelete = async () => {
     if (!check()) return
     if (!confirmId) return
     if (confirmId.source === 'expense') {
-      await deleteExpense(confirmId.id)
-      setItems(items.filter(i => i.id !== confirmId.id))
+      const item = confirmId.item
+      if (item?.category === 'credit_card' && item.description?.match(/^.+ \(\d+\/\d+\)$/)) {
+        // Parcela de cartão: deleta toda a série (todas as parcelas futuras e presentes)
+        const { deletedCount } = await deleteCreditCardSeries(user.id, item)
+        if (deletedCount > 1) {
+          // Pode ter removido itens de outros meses — re-carrega para garantir estado correto
+          await load()
+        } else {
+          setItems(items.filter(i => i.id !== confirmId.id))
+        }
+      } else {
+        await deleteExpense(confirmId.id)
+        setItems(items.filter(i => i.id !== confirmId.id))
+      }
     } else {
       await deleteDailySpending(confirmId.id)
       setDailyCardItems(dailyCardItems.filter(i => i.id !== confirmId.id))
@@ -367,6 +459,73 @@ export default function Expenses() {
         </button>
       </div>
 
+
+      {/* ── Fatura do Cartão — aparece quando há despesas de cartão ── */}
+      {totalCard > 0 && (
+        <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-red-500/25 bg-red-500/8">
+          <div>
+            <p className="text-xs text-gray-400 mb-0.5">💳 Fatura do cartão</p>
+            <p className="text-red-400 font-bold text-base">{formatBRL(totalCard)}</p>
+            <p className="text-gray-500 text-xs mt-0.5">Consolida tudo e gera uma conta a pagar</p>
+          </div>
+          <button
+            onClick={() => { setFaturaAmount(String(Math.round(totalCard * 100))); setShowFaturaModal(true) }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold
+                       bg-red-500/15 hover:bg-red-500/25 text-red-300
+                       border border-red-500/30 transition-all active:scale-95 shrink-0"
+          >
+            <CreditCard size={14} /> Gerar fatura
+          </button>
+        </div>
+      )}
+
+      {/* ── Parcelas comprometidas em outros meses ── */}
+      {futureCardItems.length > 0 && (() => {
+        const MONTHS_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+        const totalFuture = futureCardItems.reduce((s, e) => s + Number(e.amount), 0)
+        // Agrupa por ano-mês para exibição
+        const grouped = futureCardItems.reduce((acc, e) => {
+          const key = `${e.year}-${String(e.month).padStart(2,'0')}`
+          if (!acc[key]) acc[key] = { month: e.month, year: e.year, items: [], total: 0 }
+          acc[key].items.push(e)
+          acc[key].total += Number(e.amount)
+          return acc
+        }, {})
+        const sortedGroups = Object.values(grouped).sort((a, b) =>
+          a.year !== b.year ? a.year - b.year : a.month - b.month
+        )
+        return (
+          <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 overflow-hidden">
+            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-blue-500/10">
+              <div className="flex items-center gap-2">
+                <CreditCard size={13} className="text-blue-400" />
+                <span className="text-blue-300 text-xs font-semibold">Parcelas em outros meses</span>
+              </div>
+              <span className="text-blue-400 text-xs font-bold">{formatBRL(totalFuture)} comprometido</span>
+            </div>
+            <div className="divide-y divide-blue-500/8">
+              {sortedGroups.map(group => (
+                <div key={`${group.year}-${group.month}`} className="px-3.5 py-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-gray-400 text-xs font-medium">
+                      {MONTHS_PT[group.month - 1]}/{group.year}
+                    </span>
+                    <span className="text-blue-400/80 text-xs font-semibold">{formatBRL(group.total)}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {group.items.map(e => (
+                      <div key={e.id} className="flex items-center justify-between gap-2">
+                        <span className="text-gray-500 text-xs truncate">{e.description}</span>
+                        <span className="text-gray-400 text-xs shrink-0">{formatBRL(e.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Add button */}
       <button onClick={() => { if (!check()) return; setShowModal(true) }} className="btn-primary w-full">
@@ -447,6 +606,7 @@ export default function Expenses() {
                 {filteredExpenses.filter(i => i.status === 'pendente').map(item => {
                   const ci = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.variable
                   const isFuture = item.date > todayStr
+                  const isFatura = item.category === '💳 Fatura Cartão'
                   // Formata a data futura como DD/MM
                   const [, fMon, fDay] = item.date.split('-')
                   const futureLabel = `${fDay}/${fMon}`
@@ -455,6 +615,8 @@ export default function Expenses() {
                       className={`flex items-center gap-3 p-3 rounded-xl border ${
                         isFuture
                           ? 'bg-blue-500/5 border-blue-500/15'
+                          : isFatura
+                          ? 'bg-red-500/5 border-red-500/20'
                           : 'bg-amber-500/5 border-amber-500/15'
                       }`}>
                       <div className={`w-10 h-10 ${ci.bg} rounded-xl flex items-center justify-center text-lg shrink-0`}>
@@ -464,6 +626,11 @@ export default function Expenses() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-white font-medium text-sm truncate">{item.description}</p>
                           {item.is_recurring && <span className="badge-blue">🔄 Fixo</span>}
+                          {item.category === '💳 Fatura Cartão' && (
+                            <span className="text-xs bg-red-500/15 text-red-300 border border-red-500/20 px-1.5 py-0.5 rounded-full">
+                              💳 Fatura
+                            </span>
+                          )}
                           {isFuture && (
                             <span className="text-xs bg-blue-500/15 text-blue-300 border border-blue-500/20 px-1.5 py-0.5 rounded-full">
                               📅 Será descontada em {futureLabel}
@@ -473,7 +640,7 @@ export default function Expenses() {
                         <p className="text-gray-500 text-xs mt-0.5">{item.date}</p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className={`font-bold text-sm ${isFuture ? 'text-blue-400' : 'text-amber-400'}`}>
+                        <p className={`font-bold text-sm ${isFuture ? 'text-blue-400' : isFatura ? 'text-red-400' : 'text-amber-400'}`}>
                           {formatBRL(item.amount)}
                         </p>
                         <div className="flex gap-1 justify-end mt-1 flex-wrap">
@@ -487,21 +654,40 @@ export default function Expenses() {
                               >
                                 <CheckCircle size={11} /> Descontar agora
                               </button>
-                              <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                              <button onClick={() => setConfirmId({ id: item.id, source: 'expense', item })} className="btn-danger text-xs">
                                 <Trash2 size={12} />
                               </button>
                             </>
                           ) : (
                             <>
-                              <button
-                                onClick={() => handlePay(item.id)}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
-                                           bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400
-                                           border border-emerald-500/30 rounded-lg transition-all active:scale-95"
-                              >
-                                <CheckCircle size={11} /> Pagar
-                              </button>
-                              {item.is_recurring && (
+                              {item.category === '💳 Fatura Cartão' ? (
+                                /* Fatura gerada → botão de descontar do saldo */
+                                <button
+                                  onClick={() => handlePay(item.id)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
+                                             bg-red-500/15 hover:bg-red-500/25 text-red-300
+                                             border border-red-500/30 rounded-lg transition-all active:scale-95"
+                                >
+                                  <CreditCard size={11} /> Descontar agora
+                                </button>
+                              ) : item.category === 'credit_card' ? (
+                                /* Parcela de cartão → não tem "Pagar" individual; pagamento é via fatura */
+                                <span className="text-xs text-blue-400/70 border border-blue-500/15 bg-blue-500/5
+                                                 px-2 py-1 rounded-lg font-medium">
+                                  💳 Pague via fatura
+                                </span>
+                              ) : (
+                                /* Despesa fixa ou variável → botão de pagar normal */
+                                <button
+                                  onClick={() => handlePay(item.id)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
+                                             bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400
+                                             border border-emerald-500/30 rounded-lg transition-all active:scale-95"
+                                >
+                                  <CheckCircle size={11} /> Pagar
+                                </button>
+                              )}
+                              {item.is_recurring && item.category !== 'credit_card' && (
                                 <button
                                   onClick={() => handleAlreadyPaid(item.id)}
                                   className="flex items-center gap-1 px-2 py-1 text-xs font-semibold
@@ -512,7 +698,7 @@ export default function Expenses() {
                                   ✓ Já paguei
                                 </button>
                               )}
-                              <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                              <button onClick={() => setConfirmId({ id: item.id, source: 'expense', item })} className="btn-danger text-xs">
                                 <Trash2 size={12} />
                               </button>
                             </>
@@ -564,7 +750,7 @@ export default function Expenses() {
                           <button onClick={() => openEdit(item, 'expense')} className="btn-secondary text-xs">
                             <Pencil size={12} /> Editar
                           </button>
-                          <button onClick={() => setConfirmId({ id: item.id, source: 'expense' })} className="btn-danger text-xs">
+                          <button onClick={() => setConfirmId({ id: item.id, source: 'expense', item })} className="btn-danger text-xs">
                             <Trash2 size={12} /> Excluir
                           </button>
                         </div>
@@ -639,7 +825,11 @@ export default function Expenses() {
       {/* Confirm delete (individual) */}
       {confirmId && (
         <ConfirmDialog
-          message="Essa despesa será removida permanentemente."
+          message={
+            confirmId.item?.category === 'credit_card' && confirmId.item?.description?.match(/^.+ \(\d+\/\d+\)$/)
+              ? `Todas as parcelas desta compra serão removidas e o limite voltará ao normal.`
+              : 'Essa despesa será removida permanentemente.'
+          }
           onConfirm={handleDelete}
           onCancel={() => setConfirmId(null)}
         />
@@ -701,6 +891,90 @@ export default function Expenses() {
           </div>
         </div>
       )}
+
+      {/* Modal — Gerar Fatura do Cartão */}
+      {showFaturaModal && (() => {
+        const valorDigitado = parseCurrency(faturaAmount)
+        const isParcial     = valorDigitado > 0 && valorDigitado < totalCard
+        const restante      = isParcial ? totalCard - valorDigitado : 0
+        const valorInvalido = valorDigitado <= 0 || valorDigitado > totalCard
+        return (
+          <div className="modal-overlay" onClick={() => !faturaLoading && setShowFaturaModal(false)}>
+            <div className="modal-content max-w-sm" onClick={e => e.stopPropagation()}>
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-14 h-14 bg-red-500/15 rounded-2xl flex items-center justify-center text-2xl">
+                  💳
+                </div>
+                <div className="w-full text-left">
+                  <p className="text-white font-semibold text-base text-center">Gerar Fatura do Cartão</p>
+                  <p className="text-gray-400 text-sm mt-1 text-center">
+                    Total do cartão: <span className="text-red-400 font-bold">{formatBRL(totalCard)}</span>
+                  </p>
+
+                  {/* Campo de valor editável */}
+                  <div className="mt-4 mb-1">
+                    <p className="text-gray-500 text-xs mb-1.5">Valor a pagar agora</p>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">R$</span>
+                      <CurrencyInput
+                        value={faturaAmount}
+                        onChange={setFaturaAmount}
+                        className="w-full bg-dark-600 border border-white/10 rounded-xl pl-10 pr-4 py-3
+                                   text-white font-bold text-lg focus:outline-none focus:border-red-500/50
+                                   focus:ring-2 focus:ring-red-500/20 transition-all"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {/* Indicador de pagamento parcial */}
+                  {isParcial && (
+                    <div className="mt-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-left">
+                      <p className="text-amber-300 text-xs font-semibold">⚠️ Pagamento parcial</p>
+                      <p className="text-amber-400/80 text-xs mt-0.5">
+                        Restante de <span className="font-bold">{formatBRL(restante)}</span> ficará pendente no cartão.
+                      </p>
+                    </div>
+                  )}
+                  {valorDigitado > totalCard && (
+                    <p className="text-red-400 text-xs mt-2 text-center">
+                      Valor não pode ser maior que o total da fatura.
+                    </p>
+                  )}
+
+                  <p className="text-gray-600 text-xs mt-3 text-center italic">
+                    As {(items.filter(i => i.category === 'credit_card').length + dailyCardItems.length)} despesas individuais serão removidas.
+                  </p>
+                </div>
+
+                <p className="text-gray-500 text-xs text-center -mt-2">
+                  A fatura aparecerá em <span className="text-amber-400">Pendentes</span> e só desconta do saldo ao clicar <span className="text-red-400">Descontar agora</span>.
+                </p>
+
+                <div className="flex gap-3 w-full">
+                  <button
+                    onClick={() => setShowFaturaModal(false)}
+                    disabled={faturaLoading}
+                    className="btn-secondary flex-1"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handlePagarFatura}
+                    disabled={faturaLoading || valorInvalido}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2.5 rounded-xl
+                               transition-all flex items-center gap-2 justify-center active:scale-95 disabled:opacity-60"
+                  >
+                    {faturaLoading
+                      ? <><Loader2 size={15} className="animate-spin" /> Gerando...</>
+                      : <><CreditCard size={15} /> {isParcial ? 'Gerar fatura parcial' : 'Gerar fatura'}</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Modal */}
       {showModal && (
@@ -785,6 +1059,20 @@ export default function Expenses() {
                 </p>
               )}
 
+              {/* Limite disponível + erro — só para cartão de crédito */}
+              {!editingItem && form.category === 'credit_card' && (
+                <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs ${
+                  cardAvailable <= 0
+                    ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                    : parseCurrency(form.amount) > cardAvailable
+                    ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                    : 'bg-dark-600/50 border-white/5 text-gray-400'
+                }`}>
+                  <span>💳 Limite disponível</span>
+                  <span className="font-semibold">{formatBRL(Math.max(cardAvailable, 0))}</span>
+                </div>
+              )}
+
               {/* Parcelas — só para cartão de crédito */}
               {!editingItem && form.category === 'credit_card' && (
                 <div>
@@ -811,6 +1099,13 @@ export default function Expenses() {
                     </p>
                   )}
                 </div>
+              )}
+
+              {/* Erro de limite */}
+              {limitError && (
+                <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 text-center font-medium">
+                  🚫 {limitError}
+                </p>
               )}
 
               <div className="flex gap-3 pt-2">

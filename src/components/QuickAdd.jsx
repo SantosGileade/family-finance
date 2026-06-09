@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Zap, X, Loader2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePlanGate } from '../contexts/PlanGateContext'
-import { addDailySpending } from '../lib/supabase'
+import { addDailySpending, getAllCreditCardExpenses, getDailySpending, getProfile } from '../lib/supabase'
 import { format } from 'date-fns'
 import { useLang } from '../hooks/useLang'
 import CurrencyInput, { parseCurrency } from './CurrencyInput'
@@ -26,7 +26,31 @@ export default function QuickAdd() {
   const [allCategories, setAllCategories] = useState(DEFAULT_CATEGORIES)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [cardLimit, setCardLimit] = useState(0)
+  const [cardUsed,  setCardUsed]  = useState(0)
+  const [limitError, setLimitError] = useState('')
   const amountRef = useRef(null)
+
+  // Carrega limite do cartão ao abrir o modal
+  useEffect(() => {
+    if (!open || !user) return
+    const now = new Date()
+    Promise.all([
+      getProfile(user.id),
+      getAllCreditCardExpenses(user.id),
+      getDailySpending(user.id, now.getMonth() + 1, now.getFullYear()),
+    ]).then(([prof, allCard, daily]) => {
+      const limit = prof.data?.card_limit || 0
+      const pendingCard = (allCard.data || [])
+        .filter(e => e.status !== 'pago')
+        .reduce((s, e) => s + Number(e.amount), 0)
+      const dailyCard = (daily.data || [])
+        .filter(d => d.payment_method === 'credit_card')
+        .reduce((s, d) => s + Number(d.amount), 0)
+      setCardLimit(limit)
+      setCardUsed(pendingCard + dailyCard)
+    })
+  }, [open, user])
 
   // Carrega categorias ao abrir: padrão (filtrando ocultas) + personalizadas
   useEffect(() => {
@@ -48,6 +72,7 @@ export default function QuickAdd() {
     setInstallments(1)
     setAccountId(principalAccount?.id || null)
     setSaved(false)
+    setLimitError('')
     setOpen(true)
   }
 
@@ -64,13 +89,26 @@ export default function QuickAdd() {
     if (num <= 999999999) setCents(num)
   }
 
+  const formatBRL = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  const cardAvailable = cardLimit - cardUsed
+
   const handleSave = async () => {
     if (!check()) return
-    const val = parseCurrency(amount)  // parseCurrency("1500") = 15.00
+    const val = parseCurrency(amount)
     if (!val || val <= 0) {
       amountRef.current?.focus()
       return
     }
+    setLimitError('')
+
+    // Bloqueia compra no cartão que ultrapasse o limite disponível
+    if (method === 'credit_card') {
+      if (val > cardAvailable) {
+        setLimitError(`Limite insuficiente. Disponível: ${formatBRL(Math.max(cardAvailable, 0))}`)
+        return
+      }
+    }
+
     setSaving(true)
     const finalDesc = selectedCat
       ? (selectedCat.label === 'Outro' && customDesc.trim()
@@ -261,6 +299,27 @@ export default function QuickAdd() {
                 💳 Cartão
               </button>
             </div>
+
+            {/* Limite disponível — só no cartão de crédito */}
+            {method === 'credit_card' && (
+              <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs mb-3 ${
+                cardAvailable <= 0
+                  ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                  : parseCurrency(amount) > cardAvailable
+                  ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                  : 'bg-dark-600/50 border-white/5 text-gray-400'
+              }`}>
+                <span>💳 Limite disponível</span>
+                <span className="font-semibold">{formatBRL(Math.max(cardAvailable, 0))}</span>
+              </div>
+            )}
+
+            {/* Erro de limite */}
+            {limitError && (
+              <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 text-center font-medium mb-3">
+                🚫 {limitError}
+              </p>
+            )}
 
             {/* Parcelas — só no cartão de crédito */}
             {method === 'credit_card' && (

@@ -8,7 +8,8 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import {
   getIncome, getExpenses, getDailySpending,
-  getSavings, getCategoryLimits, getProfile, getAccounts, upsertProfile
+  getSavings, getCategoryLimits, getProfile, getAccounts, upsertProfile,
+  getAllCreditCardExpenses,
 } from '../lib/supabase'
 import { useAccounts } from '../hooks/useAccounts'
 import { useLang } from '../hooks/useLang'
@@ -23,17 +24,20 @@ const stripEmoji = (s) => String(s).replace(/^[\p{Emoji_Presentation}\p{Extended
 // Categorias do sistema que NÃO representam categorias reais do usuário
 const SYSTEM_CATS = new Set(['fixed', 'variable', 'credit_card'])
 
-// Agrupa gastos diários + despesas com categoria real (importadas/customizadas)
+// Agrupa gastos diários + despesas com categoria real (importadas/customizadas) + cartão
 const groupByCategory = (dailyItems, expenseItems = []) => {
   const map = {}
-  // daily_spending: a descrição É o nome da categoria
+  // daily_spending: a descrição É o nome da categoria (inclui cartão e débito)
   dailyItems.forEach(d => {
     const k = d.description || 'Outros'
     map[k] = (map[k] || 0) + Number(d.amount)
   })
-  // expenses importadas/manuais com categoria real (ex: "Mercado", "Tag", "Dog")
   expenseItems.forEach(e => {
-    if (e.category && !SYSTEM_CATS.has(e.category)) {
+    if (e.category === 'credit_card') {
+      // Parcelas/compras de cartão → agrupadas como "💳 Cartão"
+      map['💳 Cartão'] = (map['💳 Cartão'] || 0) + Number(e.amount)
+    } else if (e.category && !SYSTEM_CATS.has(e.category)) {
+      // Categorias reais: importadas, fatura, customizadas pelo usuário
       map[e.category] = (map[e.category] || 0) + Number(e.amount)
     }
   })
@@ -162,16 +166,17 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year,  setYear]  = useState(now.getFullYear())
 
-  const [income,     setIncome]     = useState([])
-  const [expenses,   setExpenses]   = useState([])
-  const [daily,      setDaily]      = useState([])
-  const [savings,    setSavings]    = useState([])
-  const [prevIncome, setPrevIncome] = useState([])
-  const [prevExp,    setPrevExp]    = useState([])
-  const [prevDaily,  setPrevDaily]  = useState([])
-  const [limitsMap,  setLimitsMap]  = useState({})
+  const [income,         setIncome]         = useState([])
+  const [expenses,       setExpenses]       = useState([])
+  const [daily,          setDaily]          = useState([])
+  const [savings,        setSavings]        = useState([])
+  const [prevIncome,     setPrevIncome]     = useState([])
+  const [prevExp,        setPrevExp]        = useState([])
+  const [prevDaily,      setPrevDaily]      = useState([])
+  const [limitsMap,      setLimitsMap]      = useState({})
+  const [allCardExp,     setAllCardExp]     = useState([])   // todas parcelas de cartão (todos os meses)
   const [cardLimit,      setCardLimit]      = useState(400)
-  const [profileGoal,    setProfileGoal]    = useState(0)   // meta diária definida pelo usuário
+  const [profileGoal,    setProfileGoal]    = useState(0)
   const [showLimitModal, setShowLimitModal] = useState(false)
   const [limitInput,     setLimitInput]     = useState('')
   const [savingLimit,    setSavingLimit]    = useState(false)
@@ -189,6 +194,7 @@ export default function Dashboard() {
       getExpenses(user.id, pm, py),
       getDailySpending(user.id, pm, py),
       getCategoryLimits(user.id),
+      getAllCreditCardExpenses(user.id),   // [8] todas parcelas de cartão
     ])
   }
 
@@ -215,7 +221,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return
     setLoading(true)
-    fetchAll(month, year).then(([inc, exp, day, sav, pInc, pEx, pDa, lim]) => {
+    fetchAll(month, year).then(([inc, exp, day, sav, pInc, pEx, pDa, lim, allCard]) => {
       setIncome(inc.data || [])
       setExpenses(exp.data || [])
       setDaily(day.data || [])
@@ -223,6 +229,7 @@ export default function Dashboard() {
       setPrevIncome(pInc.data || [])
       setPrevExp(pEx.data || [])
       setPrevDaily(pDa.data || [])
+      setAllCardExp(allCard.data || [])
       const lMap = {}
       ;(lim.data || []).forEach(l => { lMap[l.category_label] = l })
       setLimitsMap(lMap)
@@ -233,12 +240,11 @@ export default function Dashboard() {
   useEffect(() => {
     const h = () => {
       if (!user) return
-      // Re-busca o profile para pegar daily_goal atualizado
       getProfile(user.id).then(({ data }) => {
         if (data?.card_limit) setCardLimit(data.card_limit)
         if (data?.daily_goal !== undefined) setProfileGoal(data.daily_goal || 0)
       })
-      fetchAll(month, year).then(([inc, exp, day, sav, pInc, pEx, pDa]) => {
+      fetchAll(month, year).then(([inc, exp, day, sav, pInc, pEx, pDa, , allCard]) => {
         setIncome(inc.data || [])
         setExpenses(exp.data || [])
         setDaily(day.data || [])
@@ -246,6 +252,7 @@ export default function Dashboard() {
         setPrevIncome(pInc.data || [])
         setPrevExp(pEx.data || [])
         setPrevDaily(pDa.data || [])
+        setAllCardExp(allCard.data || [])
       })
     }
     window.addEventListener('finance-updated', h)
@@ -264,8 +271,10 @@ export default function Dashboard() {
                       + daily.reduce((s, d) => s + Number(d.amount), 0)
   const totalPending  = expenses.filter(e => e.status === 'pendente').reduce((s, e) => s + Number(e.amount), 0)
 
-  // Cartão
-  const creditCardUsed = paidExp.filter(e => e.category === 'credit_card').reduce((s, e) => s + Number(e.amount), 0)
+  // Cartão — soma TODAS as parcelas de todos os meses (não pagas) + gastos diários do mês atual.
+  // Isso reflete o limite total comprometido: uma compra de R$1200 em 12x usa R$1200 do limite,
+  // não apenas a parcela do mês corrente.
+  const creditCardUsed = allCardExp.filter(e => e.status !== 'pago').reduce((s, e) => s + Number(e.amount), 0)
                        + daily.filter(d => d.payment_method === 'credit_card').reduce((s, d) => s + Number(d.amount), 0)
   const cardAvailable  = cardLimit - creditCardUsed
 
@@ -537,7 +546,11 @@ export default function Dashboard() {
                   const barColor = overLimit ? '#ef4444' : limitPct > 80 ? '#f59e0b' : COLORS[i % COLORS.length]
                   return (
                     <div key={name}
-                      className={`px-3 py-2 rounded-xl border transition-all ${
+                      onClick={() => {
+                        const isCard = name === '💳 Cartão' || name === '💳 Fatura Cartão'
+                        navigate('/expenses', isCard ? { state: { tab: 'credit_card' } } : undefined)
+                      }}
+                      className={`px-3 py-2 rounded-xl border transition-all cursor-pointer hover:border-white/15 active:scale-[0.98] ${
                         overLimit ? 'bg-red-500/8 border-red-500/15' : 'bg-dark-600/50 border-white/5'
                       }`}
                     >
