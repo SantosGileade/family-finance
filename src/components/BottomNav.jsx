@@ -6,6 +6,7 @@ import {
   LogOut, X, ChevronRight, Tag, Lightbulb, Landmark
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import InstallApp from './InstallApp'
 
 const mainItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Início'   },
@@ -138,6 +139,10 @@ export default function BottomNav() {
                   <ChevronRight size={16} className="text-gray-600 shrink-0" />
                 </button>
               ))}
+
+              <div className="pt-2">
+                <InstallApp />
+              </div>
             </div>
 
             {/* Divisor */}

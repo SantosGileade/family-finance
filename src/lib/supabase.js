@@ -3,11 +3,17 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Variáveis do Supabase não configuradas! Crie o arquivo .env com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Evita uma tela branca e permite que a interface explique a configuração ausente.
+export const supabase = createClient(
+  supabaseUrl || 'https://configuracao-pendente.supabase.co',
+  supabaseAnonKey || 'configuracao-pendente',
+)
 
 // ─── INCOME ───────────────────────────────────────────────────────────────────
 

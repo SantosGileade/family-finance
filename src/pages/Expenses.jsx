@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Trash2, CreditCard, Loader2, X, Receipt, Pencil, CheckCircle, Clock } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -35,7 +35,6 @@ const SUBCATEGORIES = {
 
 export default function Expenses() {
   const { user, isAdmin } = useAuth()
-  const isCopyingRef = useRef(false)  // evita auto-cópia duplicada
   const { check } = usePlanGate()
   const t = useLang()
   const location = useLocation()
@@ -95,59 +94,6 @@ export default function Expenses() {
     setFutureCardItems(otherMonthItems)
     let expenses = expRes.data || []
     const allDaily = dailyRes.data || []
-
-    // Auto-copia despesas fixas do mês anterior quando o mês atual ainda não tem nenhuma.
-    // Só faz isso para o mês atual (não para meses passados).
-    // Usa localStorage para registrar que a cópia já foi processada, evitando que
-    // despesas removidas via "Já paguei" ressurjam ao recarregar a página.
-    const now = new Date()
-    const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
-    const hasFixed = expenses.some(e => e.is_recurring && e.category === 'fixed')
-    const copyKey = `fc_${user.id}_${year}_${month}`
-    const copyAlreadyDone = !!localStorage.getItem(copyKey)
-
-    if (isCurrentMonth && !hasFixed && !copyAlreadyDone && !isCopyingRef.current) {
-      isCopyingRef.current = true
-      // Marca imediatamente para bloquear chamadas paralelas (Strict Mode / hot reload)
-      localStorage.setItem(copyKey, '1')
-      const prevMonth = month === 1 ? 12 : month - 1
-      const prevYear  = month === 1 ? year - 1 : year
-
-      // Segunda verificação no banco para evitar race condition / strict mode duplo
-      const { data: recheckData } = await getExpenses(user.id, month, year)
-      const alreadyHasFixed = (recheckData || []).some(e => e.is_recurring && e.category === 'fixed')
-      if (alreadyHasFixed) { isCopyingRef.current = false; expenses = recheckData || expenses }
-      else {
-
-      const { data: prevExp } = await getExpenses(user.id, prevMonth, prevYear)
-      const recurring = (prevExp || []).filter(e => e.is_recurring && e.category === 'fixed')
-
-      if (recurring.length > 0) {
-        const copies = await Promise.all(recurring.map(item => {
-          const day     = new Date(item.date).getDate()
-          const lastDay = new Date(year, month, 0).getDate()
-          const newDay  = Math.min(day, lastDay)
-          const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(newDay).padStart(2,'0')}`
-          return addExpense({
-            user_id: user.id,
-            description: item.description,
-            amount: item.amount,
-            category: 'fixed',
-            date: dateStr,
-            month,
-            year,
-            is_recurring: true,
-            status: 'pendente',
-          })
-        }))
-        // Atualiza a lista com as cópias recém-criadas
-        const newItems = copies.map(r => r.data?.[0]).filter(Boolean)
-        expenses = [...expenses, ...newItems]
-        window.dispatchEvent(new Event('finance-updated'))
-      }
-      isCopyingRef.current = false
-      } // fim do else (segunda verificação)
-    }
 
     setItems(expenses)
     setDailyCardItems(allDaily.filter(d => d.payment_method === 'credit_card'))

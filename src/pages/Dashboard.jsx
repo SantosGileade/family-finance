@@ -48,20 +48,20 @@ const groupByCategory = (dailyItems, expenseItems = []) => {
 // Cada categoria de mensagem tem múltiplas variações para não repetir
 const MSG_POOL = {
   catNearLimit: [
-    (cat, pct) => `🔶 ${cat} está em ${pct}% do seu limite mensal.`,
+    (cat, pct) => `${cat} está em ${pct}% do seu limite mensal.`,
     (cat, pct) => `Atenção! Você já usou ${pct}% do limite de ${cat}.`,
     (cat, pct) => `Cuidado com ${cat} — faltam só ${100 - pct}% para atingir o limite.`,
     (cat, pct) => `${cat} próximo do teto: ${pct}% do limite utilizado.`,
   ],
   catOverLimit: [
-    (cat) => `🚨 Você ultrapassou o limite de ${cat} este mês!`,
-    (cat) => `⚠️ Limite de ${cat} estourado. Revise seus gastos.`,
+    (cat) => `Você ultrapassou o limite de ${cat} este mês!`,
+    (cat) => `Limite de ${cat} estourado. Revise seus gastos.`,
     (cat) => `${cat} passou do limite configurado. Hora de rever!`,
   ],
   spendingDown: [
-    (pct) => `Seus gastos caíram ${pct}% em relação ao mês passado. 🎉`,
+    (pct) => `Seus gastos caíram ${pct}% em relação ao mês passado.`,
     (pct) => `Ótimo! Você gastou ${pct}% menos que no mês anterior.`,
-    (pct) => `Progresso real: ${pct}% de redução nos gastos. 💪`,
+    (pct) => `Progresso real: ${pct}% de redução nos gastos.`,
     (pct) => `Mês mais econômico: ${pct}% abaixo do período anterior.`,
   ],
   spendingUp: [
@@ -70,9 +70,9 @@ const MSG_POOL = {
     (pct) => `Atenção: ${pct}% de aumento nos gastos este mês.`,
   ],
   todayOnTrack: [
-    () => `Gasto de hoje dentro da meta diária. Bom ritmo! ✅`,
+    () => `Gasto de hoje dentro da meta diária. Bom ritmo!`,
     () => `Meta diária respeitada. Continue assim!`,
-    () => `Hoje está no caminho certo com os gastos. 👍`,
+    () => `Hoje está no caminho certo com os gastos.`,
   ],
   todayOver: [
     (goal) => `Gasto de hoje ultrapassou sua meta de ${goal}.`,
@@ -99,7 +99,8 @@ function buildMessages({ currCats, limitsMap, totalIncome, totalExpenses, prevTo
 
   // 1. Alertas de limite por categoria
   Object.entries(currCats).forEach(([cat, spent]) => {
-    const lim = limitsMap[cat] || limitsMap[stripEmoji(cat)]
+    const displayCat = stripEmoji(cat)
+    const lim = limitsMap[cat] || limitsMap[displayCat]
     if (!lim || lim.limit_type === 'none') return
     const threshold = lim.limit_type === 'value'
       ? lim.limit_value
@@ -107,9 +108,9 @@ function buildMessages({ currCats, limitsMap, totalIncome, totalExpenses, prevTo
     if (threshold <= 0) return
     const pct = Math.round((spent / threshold) * 100)
     if (pct >= 100) {
-      candidates.push({ type: 'warning', priority: 1, text: pickRandom(MSG_POOL.catOverLimit)(cat) })
+      candidates.push({ type: 'warning', priority: 1, text: pickRandom(MSG_POOL.catOverLimit)(displayCat) })
     } else if (pct >= 75) {
-      candidates.push({ type: 'warning', priority: 2, text: pickRandom(MSG_POOL.catNearLimit)(cat, pct) })
+      candidates.push({ type: 'warning', priority: 2, text: pickRandom(MSG_POOL.catNearLimit)(displayCat, pct) })
     }
   })
 
@@ -136,7 +137,7 @@ function buildMessages({ currCats, limitsMap, totalIncome, totalExpenses, prevTo
     const [topCat, topVal] = catRanked[0]
     const pct = Math.round((topVal / currTotal) * 100)
     if (pct >= 35) {
-      candidates.push({ type: 'info', priority: 5, text: pickRandom(MSG_POOL.topCatHigh)(topCat, pct) })
+      candidates.push({ type: 'info', priority: 5, text: pickRandom(MSG_POOL.topCatHigh)(stripEmoji(topCat), pct) })
     }
   }
 

@@ -128,7 +128,7 @@ function LimitBadge({ limit }) {
 }
 
 export default function Categories() {
-  const { user, profile } = useAuth()
+  const { user, profile, refreshProfile } = useAuth()
   const { check } = usePlanGate()
 
   const [hidden,       setHidden]       = useState([])
@@ -176,11 +176,30 @@ export default function Categories() {
   }, [])
 
   const toggleHide = async (label) => {
+    const previousHidden = hidden
     const newHidden = hidden.includes(label)
       ? hidden.filter(h => h !== label)
       : [...hidden, label]
     setHidden(newHidden)
-    await updateHiddenCategories(user.id, newHidden)
+    const { error } = await updateHiddenCategories(user.id, newHidden)
+    if (error) {
+      setHidden(previousHidden)
+      console.error('Erro ao salvar categorias ocultas:', error)
+      return
+    }
+    await refreshProfile()
+  }
+
+  const showAll = async () => {
+    const previousHidden = hidden
+    setHidden([])
+    const { error } = await updateHiddenCategories(user.id, [])
+    if (error) {
+      setHidden(previousHidden)
+      console.error('Erro ao mostrar todas as categorias:', error)
+      return
+    }
+    await refreshProfile()
   }
 
   const openLimitModal = (cat) => {
@@ -268,7 +287,7 @@ export default function Categories() {
             <span className="text-xs bg-dark-600 text-gray-500 px-2 py-0.5 rounded-full">{visibleCount} ativas</span>
           </div>
           {hidden.length > 0 && (
-            <button onClick={() => { setHidden([]); updateHiddenCategories(user.id, []) }}
+            <button onClick={showAll}
               className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
               Mostrar todas
             </button>
