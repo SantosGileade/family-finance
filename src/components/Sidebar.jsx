@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, TrendingUp, CreditCard,
-  Calendar, LogOut, FileUp, Tag, Shield
+  Calendar, LogOut, FileUp, Tag, Shield, Landmark
 } from 'lucide-react'
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/income', icon: TrendingUp, label: 'Renda', en: 'Income' },
   { to: '/expenses', icon: CreditCard, label: 'Despesas', en: 'Expenses' },
   { to: '/daily', icon: Calendar, label: 'Gastos Diários', en: 'Daily Spend' },
+  { to: '/accounts', icon: Landmark, label: 'Contas', en: 'Accounts' },
   { to: '/categories', icon: Tag, label: 'Categorias', en: 'Categories' },
   { to: '/import', icon: FileUp, label: 'Importar', en: 'Import CSV' },
 ]
