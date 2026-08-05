@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, CreditCard, Calendar,
   MoreHorizontal, PiggyBank, FileUp, BarChart2,
-  LogOut, X, ChevronRight, Tag, Lightbulb, Landmark
+  LogOut, X, ChevronRight, Tag, Landmark
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import InstallApp from './InstallApp'
@@ -20,7 +20,6 @@ const sheetItems = [
   { to: '/accounts',   icon: Landmark,  label: 'Contas',              sub: 'Gerenciar contas'         },
   { to: '/categories', icon: Tag,       label: 'Categorias',          sub: 'Gerenciar categorias'     },
   { to: '/import',     icon: FileUp,    label: 'Importar dados',      sub: 'Importar extrato CSV'     },
-  { to: '/tips',       icon: Lightbulb, label: 'Dicas',               sub: 'Dicas e vocabulário'      },
 ]
 
 export default function BottomNav() {

@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, TrendingUp, CreditCard,
-  Calendar, Lightbulb, LogOut, FileUp, Tag, Shield
+  Calendar, LogOut, FileUp, Tag, Shield
 } from 'lucide-react'
 
 const navItems = [
@@ -12,7 +12,6 @@ const navItems = [
   { to: '/daily', icon: Calendar, label: 'Gastos Diários', en: 'Daily Spend' },
   { to: '/categories', icon: Tag, label: 'Categorias', en: 'Categories' },
   { to: '/import', icon: FileUp, label: 'Importar', en: 'Import CSV' },
-  { to: '/tips', icon: Lightbulb, label: 'Dicas', en: 'Tips & Learn' },
 ]
 
 export default function Sidebar() {
